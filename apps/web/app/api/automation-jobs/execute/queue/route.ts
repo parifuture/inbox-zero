@@ -12,7 +12,7 @@ export const maxDuration = 300;
 
 const logger = createScopedLogger("automation-jobs/execute/queue");
 
-export const POST = handleCallback<z.infer<typeof executeAutomationJobBody>>(
+const _postHandler = handleCallback<z.infer<typeof executeAutomationJobBody>>(
   async (message, metadata) => {
     const parseResult = executeAutomationJobBody.safeParse(message);
     if (!parseResult.success) {
@@ -55,3 +55,6 @@ export const POST = handleCallback<z.infer<typeof executeAutomationJobBody>>(
     }),
   },
 );
+
+// @vercel/queue types CallbackRequestInput but Next.js 16 requires Request | NextRequest
+export const POST = (request: Request): Promise<Response> => _postHandler(request);

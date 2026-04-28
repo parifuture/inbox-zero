@@ -33,7 +33,7 @@
     "turbo": "2.9.6",
     "ultracite": "7.6.0"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.2",
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,jsonc,css,scss,md,mdx}": [
       "ultracite fix"

@@ -13,7 +13,7 @@ const queuePayloadSchema = z.object({
   emailAccountId: z.string().min(1),
 });
 
-export const POST = handleCallback<z.infer<typeof queuePayloadSchema>>(
+const _postHandler = handleCallback<z.infer<typeof queuePayloadSchema>>(
   async (message, metadata) => {
     const parseResult = queuePayloadSchema.safeParse(message);
     if (!parseResult.success) {
@@ -57,3 +57,6 @@ export const POST = handleCallback<z.infer<typeof queuePayloadSchema>>(
     }),
   },
 );
+
+// @vercel/queue types CallbackRequestInput but Next.js 16 requires Request | NextRequest
+export const POST = (request: Request): Promise<Response> => _postHandler(request);
