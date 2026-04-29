@@ -16,6 +16,7 @@ import {
   FileIcon,
   FileTextIcon,
   HardDriveIcon,
+  HistoryIcon,
   InboxIcon,
   type LucideIcon,
   MailsIcon,
@@ -130,6 +131,12 @@ export const useNavigation = () => {
             },
           ]
         : []),
+      {
+        name: "Historical Cleanup",
+        href: prefixPath(currentEmailAccountId, "/historical-cleanup"),
+        icon: HistoryIcon,
+        beta: true,
+      },
     ],
     [currentEmailAccountId, provider, showCleaner],
   );
