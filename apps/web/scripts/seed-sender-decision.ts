@@ -19,7 +19,6 @@
  */
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore -- `pg` is a runtime dep; @types/pg is transitive-only.
 import { Client as PgClient } from "pg";
 import prisma from "@/utils/prisma";
 import { canonicalizeSender, upsertDecision } from "@/utils/sender-decision";
