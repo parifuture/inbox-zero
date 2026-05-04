@@ -2,7 +2,6 @@ import type { Prisma, SenderDecision } from "@/generated/prisma/client";
 import type { SenderAction } from "@/generated/prisma/enums";
 import { extractDomainFromEmail, extractEmailAddress } from "@/utils/email";
 import prisma from "@/utils/prisma";
-
 /**
  * Canonicalize a raw "From" header or bare email into a stable key suitable
  * for use as `SenderDecision.senderEmail`.
