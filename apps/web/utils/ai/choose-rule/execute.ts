@@ -1,4 +1,5 @@
 import { runActionFunction } from "@/utils/ai/actions";
+import { isAutonomousPaused } from "@/utils/kill-switch";
 import prisma from "@/utils/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { ExecutedRuleStatus, ActionType } from "@/generated/prisma/enums";
@@ -40,6 +41,33 @@ export async function executeAct({
     threadId: executedRule.threadId,
     messageId: executedRule.messageId,
   });
+
+  // EL-370 kill-switch: when autonomous actions are paused for this email
+  // account, we record the rule as SUPPRESSED (with `suppressedByKillSwitch`
+  // true) and do NOT run any of its actions. The ExecutedRule row is kept
+  // so the user can review what WOULD have happened once they resume.
+  if (await isAutonomousPaused(emailAccount.id)) {
+    await prisma.executedRule
+      .update({
+        where: { id: executedRule.id },
+        data: {
+          status: ExecutedRuleStatus.SKIPPED,
+          suppressedByKillSwitch: true,
+          reason: executedRule.reason
+            ? `${executedRule.reason}\nsuppressed_by_kill_switch`
+            : "suppressed_by_kill_switch",
+        },
+      })
+      .catch((error) => {
+        log.error("Failed to mark executed rule suppressed by kill switch", {
+          error,
+        });
+      });
+    log.warn("executeAct.kill_switch_active", {
+      emailAccountId: emailAccount.id,
+    });
+    return;
+  }
 
   const actionFailures: ActionFailure[] = [];
 
