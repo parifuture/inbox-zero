@@ -196,9 +196,7 @@ const parsedEnv = createEnv({
 
     API_KEY_SALT: z.string().optional(),
 
-    POSTHOG_API_SECRET: z.string().optional(),
-    POSTHOG_PROJECT_ID: z.string().optional(),
-    POSTHOG_LLM_EVALS_APPROVED_EMAILS: z.string().optional(),
+    // EL-359: PostHog env vars removed — self-hosted fork does not phone home.
 
     RESEND_API_KEY: z.string().optional(),
     RESEND_AUDIENCE_ID: z.string().optional(),
@@ -290,10 +288,8 @@ const parsedEnv = createEnv({
     NEXT_PUBLIC_CALL_LINK: z
       .string()
       .default("https://cal.com/team/inbox-zero/feedback"),
-    NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-    NEXT_PUBLIC_POSTHOG_API_HOST: z.string().optional(),
-    NEXT_PUBLIC_POSTHOG_HERO_AB: z.string().optional(),
-    NEXT_PUBLIC_POSTHOG_ONBOARDING_SURVEY_ID: z.string().optional(),
+    // EL-359: NEXT_PUBLIC_POSTHOG_* removed — self-hosted fork does not phone home.
+
     NEXT_PUBLIC_BASE_URL: z.string(),
     NEXT_PUBLIC_IMAGE_PROXY_BASE_URL: z.string().url().optional(),
     NEXT_PUBLIC_IMAGE_PROXY_USE_APP_ROUTE: booleanString
@@ -386,11 +382,8 @@ const parsedEnv = createEnv({
       process.env.NEXT_PUBLIC_COPILOT_MONTHLY_VARIANT_ID,
 
     NEXT_PUBLIC_CALL_LINK: process.env.NEXT_PUBLIC_CALL_LINK,
-    NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
-    NEXT_PUBLIC_POSTHOG_API_HOST: process.env.NEXT_PUBLIC_POSTHOG_API_HOST,
-    NEXT_PUBLIC_POSTHOG_HERO_AB: process.env.NEXT_PUBLIC_POSTHOG_HERO_AB,
-    NEXT_PUBLIC_POSTHOG_ONBOARDING_SURVEY_ID:
-      process.env.NEXT_PUBLIC_POSTHOG_ONBOARDING_SURVEY_ID,
+    // EL-359: PostHog runtime env bindings removed.
+
     NEXT_PUBLIC_BASE_URL: getBaseUrl(),
     NEXT_PUBLIC_IMAGE_PROXY_BASE_URL:
       process.env.NEXT_PUBLIC_IMAGE_PROXY_BASE_URL,

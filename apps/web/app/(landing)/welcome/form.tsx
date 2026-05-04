@@ -3,12 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type SubmitHandler, useForm } from "react-hook-form";
 import { useRouter, useSearchParams } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
-import type { Properties } from "posthog-js";
+import { usePostHog } from "@/utils/posthog-client";
+import type { Properties } from "@/utils/posthog-client";
 import { survey } from "@/app/(landing)/welcome/survey";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/Input";
-import { env } from "@/env";
 import {
   completedOnboardingAction,
   saveOnboardingAnswersAction,
@@ -17,7 +16,8 @@ import { useOnboardingAnalytics } from "@/hooks/useAnalytics";
 import { useSignUpEvent } from "@/hooks/useSignupEvent";
 import { usePremium } from "@/hooks/usePremium";
 
-const surveyId = env.NEXT_PUBLIC_POSTHOG_ONBOARDING_SURVEY_ID;
+// EL-359: PostHog survey id removed — self-hosted fork does not run surveys.
+const surveyId: string | undefined = undefined;
 
 type Inputs = Record<"$survey_response" | `$survey_response_${number}`, string>;
 

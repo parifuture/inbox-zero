@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePostHog } from "posthog-js/react";
-import type { PostHog } from "posthog-js";
+import { usePostHog } from "@/utils/posthog-client";
+import type { PostHog } from "@/utils/posthog-client";
 import { Label, Radio, RadioGroup } from "@headlessui/react";
 import { Sparkle } from "@/components/new-landing/icons/Sparkle";
 import { Zap } from "@/components/new-landing/icons/Zap";

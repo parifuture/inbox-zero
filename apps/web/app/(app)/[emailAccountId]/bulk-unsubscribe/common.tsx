@@ -15,7 +15,7 @@ import {
   ThumbsUpIcon,
   TrashIcon,
 } from "lucide-react";
-import { type PostHog, usePostHog } from "posthog-js/react";
+import { type PostHog, usePostHog } from "@/utils/posthog-client";
 import type { UserResponse } from "@/app/api/user/me/route";
 import { Button } from "@/components/ui/button";
 import { ButtonLoader } from "@/components/Loading";

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { cn } from "@/utils";
 import { Logo } from "@/components/new-landing/common/Logo";
 import { Button } from "@/components/new-landing/common/Button";

@@ -43,7 +43,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => mockUseRouter(),
 }));
 
-vi.mock("posthog-js/react", () => ({
+vi.mock("@/utils/posthog-client", () => ({
   usePostHog: () => mockUsePostHog(),
 }));
 
