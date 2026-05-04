@@ -7,6 +7,7 @@ import { getGmailClientForEmail } from "@/utils/email-account-client";
 import { getMessages } from "@/utils/gmail/message";
 import { GmailLabel } from "@/utils/gmail/label";
 import { withGmailRetry } from "@/utils/gmail/retry";
+import { buildArchiveQuery } from "@/app/api/historical-senders/scan-runner";
 import prisma from "@/utils/prisma";
 
 const bodySchema = z.object({
@@ -18,7 +19,6 @@ export type HistoricalSendersArchiveResponse = {
 };
 
 const BATCH_MODIFY_CHUNK_SIZE = 1000;
-const CUTOFF_QUERY = "before:2024/01/01";
 
 export const POST = withEmailProvider(
   "historical-senders/archive",
@@ -41,7 +41,7 @@ export const POST = withEmailProvider(
     for (const senderEmail of body.senderEmails) {
       let archivedCount = 0;
       let pageToken: string | undefined;
-      const query = `from:${senderEmail} ${CUTOFF_QUERY} in:inbox`;
+      const query = buildArchiveQuery(senderEmail);
 
       do {
         const { messages, nextPageToken } = await getMessages(gmail, {
