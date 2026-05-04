@@ -51,6 +51,7 @@ import {
   LOW_TRUST_STATIC_FROM_OUTBOUND_MESSAGE,
 } from "@/utils/rule/static-from-risk";
 import { isDraftReplyActionType } from "@/utils/actions/draft-reply";
+import { applySenderDecisionGate } from "@/utils/ai/choose-rule/sender-decision-gate";
 
 const MODULE = "ai/choose-rule";
 
@@ -115,6 +116,26 @@ export async function runRules({
   logger: Logger;
   skipArchive?: boolean;
 }): Promise<RunRulesResult[]> {
+  // Sender-decision gate (EL-356): if the canonical sender has an explicit
+  // decision (auto_trash / auto_archive / always_keep), short-circuit the
+  // rules+LLM pipeline. `review` and unknown senders fall through unchanged.
+  const gateResult = await applySenderDecisionGate({
+    emailAccountId: emailAccount.id,
+    message,
+    provider,
+    logger,
+    isTest,
+  });
+  if (gateResult.gated) {
+    return [
+      {
+        status: ExecutedRuleStatus.APPLIED,
+        reason: `sender_decision:${gateResult.action}`,
+        createdAt: new Date(),
+      },
+    ];
+  }
+
   const batchTimestamp = new Date(); // Single timestamp for this batch execution
   const { regularRules, conversationRules } = prepareRulesWithMetaRule(rules);
 
