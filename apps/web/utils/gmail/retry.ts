@@ -195,6 +195,21 @@ export function isRetryableError(errorInfo: ErrorInfo): {
 }
 
 /**
+ * Symmetric jitter factor applied to computed backoff windows. Keeps retries
+ * from stacking with other callers that hit the same 429 — a classic
+ * thundering-herd mitigation.
+ */
+export const BACKOFF_JITTER_RATIO = 0.25;
+
+function applyJitter(delayMs: number): number {
+  if (delayMs <= 0) return 0;
+  const spread = delayMs * BACKOFF_JITTER_RATIO;
+  // Range [delay - spread, delay + spread]
+  const jittered = delayMs + (Math.random() * 2 - 1) * spread;
+  return Math.max(0, Math.round(jittered));
+}
+
+/**
  * Calculates retry delay based on error type and attempt number
  */
 export function calculateRetryDelay(
@@ -210,6 +225,7 @@ export function calculateRetryDelay(
   if (retryTime) {
     const delayMs = Math.max(0, retryTime.getTime() - Date.now());
     if (delayMs > 0) {
+      // Respect server-provided retry time exactly — no jitter.
       return delayMs;
     }
     // If stale, fall through to fallback logic
@@ -235,22 +251,22 @@ export function calculateRetryDelay(
 
   // Use different fallback delays based on error type
   if (isServerError) {
-    // Exponential backoff for server errors: 5s, 10s, 20s, 40s, 80s
-    return Math.min(5000 * 2 ** (attemptNumber - 1), 80_000);
+    // Exponential backoff for server errors: 5s, 10s, 20s, 40s, 80s (±25% jitter)
+    return applyJitter(Math.min(5000 * 2 ** (attemptNumber - 1), 80_000));
   }
 
   if (isRateLimit) {
-    // Short exponential backoff keeps retries within request lifetimes unless Gmail provides an explicit retry time.
-    return Math.min(1000 * 2 ** (attemptNumber - 1), 10_000);
+    // Short exponential backoff keeps retries within request lifetimes unless Gmail provides an explicit retry time. ±25% jitter.
+    return applyJitter(Math.min(1000 * 2 ** (attemptNumber - 1), 10_000));
   }
 
   if (isFailedPrecondition) {
-    // Short exponential backoff for transient precondition failures: 1s, 2s, 4s, 8s, 10s
-    return Math.min(1000 * 2 ** (attemptNumber - 1), 10_000);
+    // Short exponential backoff for transient precondition failures: 1s, 2s, 4s, 8s, 10s (±25% jitter)
+    return applyJitter(Math.min(1000 * 2 ** (attemptNumber - 1), 10_000));
   }
 
-  // Default exponential backoff for other retryable errors: 1s, 2s, 4s, 8s, 16s
-  return Math.min(1000 * 2 ** (attemptNumber - 1), 16_000);
+  // Default exponential backoff for other retryable errors: 1s, 2s, 4s, 8s, 16s (±25% jitter)
+  return applyJitter(Math.min(1000 * 2 ** (attemptNumber - 1), 16_000));
 }
 
 /**
@@ -275,7 +291,7 @@ function parseRetryTime(errorMessage: string): Date | null {
 
 function trimErrorMessage(errorMessage: string): string | undefined {
   const trimmed = errorMessage.trim();
-  if (!trimmed) return undefined;
+  if (!trimmed) return;
   if (trimmed.length <= 500) return trimmed;
   return `${trimmed.slice(0, 497)}...`;
 }
@@ -299,9 +315,9 @@ function getFirstErrorValue(
   errors: unknown,
   key: "reason" | "message",
 ): string | undefined {
-  if (!Array.isArray(errors)) return undefined;
+  if (!Array.isArray(errors)) return;
   const firstError = errors[0];
-  if (!firstError || typeof firstError !== "object") return undefined;
+  if (!firstError || typeof firstError !== "object") return;
   const value = (firstError as Record<string, unknown>)[key];
   return typeof value === "string" ? value : undefined;
 }
@@ -312,7 +328,7 @@ function getNumericStatus(...values: unknown[]): number | undefined {
     if (normalized !== undefined) return normalized;
   }
 
-  return undefined;
+  return;
 }
 
 function normalizeNumericValue(value: unknown): number | undefined {
@@ -323,7 +339,7 @@ function normalizeNumericValue(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
 
-  return undefined;
+  return;
 }
 
 function getCodeValue(...values: unknown[]): string | undefined {
@@ -334,7 +350,7 @@ function getCodeValue(...values: unknown[]): string | undefined {
     }
   }
 
-  return undefined;
+  return;
 }
 
 function getRetryAttemptError(attempt: unknown): unknown {
@@ -372,8 +388,8 @@ function toErrorInstance(error: unknown, fallbackMessage: string): Error {
 
 function getAbortOriginalError(error: unknown): unknown | undefined {
   const errorRecord = toRecord(error);
-  if (errorRecord.name !== "AbortError") return undefined;
-  if (!("originalError" in errorRecord)) return undefined;
+  if (errorRecord.name !== "AbortError") return;
+  if (!("originalError" in errorRecord)) return;
   return errorRecord.originalError;
 }
 

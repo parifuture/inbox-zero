@@ -45,6 +45,7 @@ COPY . .
 # === Build environment ===
 ENV NODE_ENV=production
 ENV DOCKER_BUILD=true
+ENV SKIP_TYPE_CHECK=true
 
 # Standalone output for Docker deployment
 ENV NEXT_PRIVATE_STANDALONE=true

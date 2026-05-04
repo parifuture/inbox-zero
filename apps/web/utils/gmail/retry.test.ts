@@ -142,24 +142,32 @@ describe("Gmail retry helpers", () => {
   });
 
   describe("calculateRetryDelay", () => {
+    // Jitter adds ±25%. Helper to assert base-relative bounds.
+    const expectJittered = (delay: number, base: number) => {
+      const low = Math.floor(base * 0.75);
+      const high = Math.ceil(base * 1.25);
+      expect(delay).toBeGreaterThanOrEqual(low);
+      expect(delay).toBeLessThanOrEqual(high);
+    };
+
     it("should use short exponential backoff for rate limit errors", () => {
-      expect(calculateRetryDelay(true, false, false, 1)).toBe(1000);
-      expect(calculateRetryDelay(true, false, false, 2)).toBe(2000);
-      expect(calculateRetryDelay(true, false, false, 4)).toBe(8000);
-      expect(calculateRetryDelay(true, false, false, 5)).toBe(10_000);
+      expectJittered(calculateRetryDelay(true, false, false, 1), 1000);
+      expectJittered(calculateRetryDelay(true, false, false, 2), 2000);
+      expectJittered(calculateRetryDelay(true, false, false, 4), 8000);
+      expectJittered(calculateRetryDelay(true, false, false, 5), 10_000);
     });
 
     it("should use exponential backoff for server errors", () => {
-      expect(calculateRetryDelay(false, true, false, 1)).toBe(5000); // 5s
-      expect(calculateRetryDelay(false, true, false, 2)).toBe(10_000); // 10s
-      expect(calculateRetryDelay(false, true, false, 3)).toBe(20_000); // 20s
+      expectJittered(calculateRetryDelay(false, true, false, 1), 5000);
+      expectJittered(calculateRetryDelay(false, true, false, 2), 10_000);
+      expectJittered(calculateRetryDelay(false, true, false, 3), 20_000);
     });
 
     it("should use fallback delay when retry time is in the past", () => {
       const pastDate = new Date(Date.now() - 10_000).toISOString();
       const errorMessage = `Rate limit exceeded. Retry after ${pastDate}`;
 
-      // Should fall back to rate-limit backoff
+      // Should fall back to rate-limit backoff (jittered)
       const delay = calculateRetryDelay(
         true,
         false,
@@ -168,19 +176,19 @@ describe("Gmail retry helpers", () => {
         undefined,
         errorMessage,
       );
-      expect(delay).toBe(1000);
+      expectJittered(delay, 1000);
     });
 
     it("should use fallback delay when Retry-After header is stale", () => {
       // Use HTTP-date format (like "Wed, 21 Oct 2015 07:28:00 GMT")
       const pastDate = new Date(Date.now() - 5000).toUTCString();
 
-      // Should fall back to exponential backoff for server error
+      // Should fall back to exponential backoff for server error (jittered)
       const delay = calculateRetryDelay(false, true, false, 2, pastDate);
-      expect(delay).toBe(10_000); // 2nd attempt = 10s
+      expectJittered(delay, 10_000);
     });
 
-    it("should use retry time from error message when valid", () => {
+    it("should use retry time from error message when valid (NO jitter — server-provided)", () => {
       const futureDate = new Date(Date.now() + 15_000).toISOString();
       const errorMessage = `Rate limit exceeded. Retry after ${futureDate}`;
 
@@ -197,19 +205,32 @@ describe("Gmail retry helpers", () => {
     });
 
     it("should use short backoff for failed precondition", () => {
-      expect(calculateRetryDelay(false, false, true, 1)).toBe(1000);
-      expect(calculateRetryDelay(false, false, true, 3)).toBe(4000);
-      expect(calculateRetryDelay(false, false, true, 5)).toBe(10_000);
+      expectJittered(calculateRetryDelay(false, false, true, 1), 1000);
+      expectJittered(calculateRetryDelay(false, false, true, 3), 4000);
+      expectJittered(calculateRetryDelay(false, false, true, 5), 10_000);
     });
 
     it("should use default exponential backoff for other retryable errors (e.g., network)", () => {
-      // When no specific error type matches, falls back to default
-      expect(calculateRetryDelay(false, false, false, 1)).toBe(1000); // 1s
-      expect(calculateRetryDelay(false, false, false, 2)).toBe(2000); // 2s
-      expect(calculateRetryDelay(false, false, false, 3)).toBe(4000); // 4s
-      expect(calculateRetryDelay(false, false, false, 4)).toBe(8000); // 8s
-      expect(calculateRetryDelay(false, false, false, 5)).toBe(16_000); // 16s max
-      expect(calculateRetryDelay(false, false, false, 6)).toBe(16_000); // capped at 16s
+      expectJittered(calculateRetryDelay(false, false, false, 1), 1000);
+      expectJittered(calculateRetryDelay(false, false, false, 2), 2000);
+      expectJittered(calculateRetryDelay(false, false, false, 3), 4000);
+      expectJittered(calculateRetryDelay(false, false, false, 4), 8000);
+      expectJittered(calculateRetryDelay(false, false, false, 5), 16_000);
+      expectJittered(calculateRetryDelay(false, false, false, 6), 16_000);
+    });
+
+    it("jitter spreads consecutive calls around the base but never exceeds ±25%", () => {
+      const samples = Array.from({ length: 200 }, () =>
+        calculateRetryDelay(true, false, false, 3),
+      );
+      // base 4000ms, jitter ±25% → [3000, 5000]
+      for (const delay of samples) {
+        expect(delay).toBeGreaterThanOrEqual(3000);
+        expect(delay).toBeLessThanOrEqual(5000);
+      }
+      // Should actually spread (reject the "always returns base" bug)
+      const unique = new Set(samples);
+      expect(unique.size).toBeGreaterThan(10);
     });
   });
 
