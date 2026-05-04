@@ -171,10 +171,10 @@ model EmailAccount {
   // EL-370 kill-switch: when true, autonomous actions (sender-decision gate,
   // rule executor, backlog applier, scheduled actions) short-circuit and
   // record what they WOULD have done instead of mutating Gmail.
-  autonomousActionsPaused       Boolean   @default(false)
-  autonomousActionsPausedAt     DateTime?
-  autonomousActionsPausedBy     String?
-  autonomousActionsPauseReason  String?
+  autonomousActionsPaused      Boolean   @default(false)
+  autonomousActionsPausedAt    DateTime?
+  autonomousActionsPausedBy    String?
+  autonomousActionsPauseReason String?
 
   userId    String
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -217,6 +217,7 @@ model EmailAccount {
   senderDecisions        SenderDecision[]
   senderDecisionAudits   SenderDecisionAudit[]
   senderDecisionJobs     SenderDecisionJob[]
+  parityDecisions        ParityDecision[]
 
   historicalSenderScan HistoricalSenderScan?
   historicalSenders    HistoricalSender[]
@@ -1813,4 +1814,42 @@ model HistoricalSender {
   @@unique([emailAccountId, senderEmail])
   @@index([emailAccountId, count])
   @@index([emailAccountId, lastDate])
+}
+
+// EL-358 — shadow-mode parity classifier output. One row per message the
+// new fork classifier evaluated. NEVER used to drive Gmail mutations; the
+// sidecar remains the source of truth until EL-363 verifies agreement.
+//
+// Writes land in EL-358b (runner wiring). EL-358a creates the table only.
+model ParityDecision {
+  id               String       @id @default(cuid())
+  emailAccountId   String
+  emailAccount     EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  messageId        String // Gmail internal message id
+  threadId         String?
+  senderEmail      String // canonicalized lowercase
+  senderDomain     String
+  subject          String?
+  stage            Int // 0..4 — which pipeline stage decided
+  action           String // 'inbox' | 'review' | 'noMatch' | 'trash'
+  ruleName         String? // fork rule name or null for noMatchFound
+  category         String? // PERSONAL | TRANSACTIONAL | BULK (stage 4 only)
+  labelAssigned    String? // label the Bedrock classifier chose (stage 4 only)
+  score            Float? // 0..1 personal-priority score when computed
+  confidence       Float? // classifier confidence (stage 4 only)
+  reasoning        String? // human-readable explanation for the Decisions tab
+  bedrockUsed      Boolean      @default(false)
+  gmailFetchFailed Boolean      @default(false)
+  // Sidecar's decision on the same message, when known. Populated by EL-363
+  // harness; EL-358b leaves these null.
+  sidecarAction    String?
+  sidecarRuleName  String?
+  // Shadow runner latency for perf tracking.
+  durationMs       Int?
+  createdAt        DateTime     @default(now())
+
+  @@unique([emailAccountId, messageId])
+  @@index([emailAccountId, senderEmail])
+  @@index([emailAccountId, createdAt])
+  @@index([emailAccountId, stage])
 }
