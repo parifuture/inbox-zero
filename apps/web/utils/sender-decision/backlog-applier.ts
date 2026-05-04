@@ -4,6 +4,7 @@ import type { SenderDecisionJob } from "@/generated/prisma/client";
 import prisma from "@/utils/prisma";
 import { GmailLabel } from "@/utils/gmail/label";
 import { withGmailRetry } from "@/utils/gmail/retry";
+import { runGmailOp } from "@/utils/gmail/errors";
 import { getGmailClientForEmail } from "@/utils/email-account-client";
 import { createScopedLogger, type Logger } from "@/utils/logger";
 import { sleep } from "@/utils/sleep";
@@ -116,13 +117,17 @@ async function listAllMessageIds(
       break;
     }
 
-    const resp = await withGmailRetry(() =>
-      gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: 500,
-        pageToken,
-      }),
+    const resp = await runGmailOp(
+      () =>
+        withGmailRetry(() =>
+          gmail.users.messages.list({
+            userId: "me",
+            q: query,
+            maxResults: 500,
+            pageToken,
+          }),
+        ),
+      { op: "list", targetId: query, logger },
     );
 
     for (const m of resp.data.messages ?? []) {
@@ -194,19 +199,23 @@ export async function runApplierSideEffects(params: {
       if (deps.batchModify) {
         await deps.batchModify({ ids: batch, mutation });
       } else {
-        await withGmailRetry(() =>
-          deps.gmail.users.messages.batchModify({
-            userId: "me",
-            requestBody: {
-              ids: batch,
-              addLabelIds: mutation.addLabelIds.length
-                ? mutation.addLabelIds
-                : undefined,
-              removeLabelIds: mutation.removeLabelIds.length
-                ? mutation.removeLabelIds
-                : undefined,
-            },
-          }),
+        await runGmailOp(
+          () =>
+            withGmailRetry(() =>
+              deps.gmail.users.messages.batchModify({
+                userId: "me",
+                requestBody: {
+                  ids: batch,
+                  addLabelIds: mutation.addLabelIds.length
+                    ? mutation.addLabelIds
+                    : undefined,
+                  removeLabelIds: mutation.removeLabelIds.length
+                    ? mutation.removeLabelIds
+                    : undefined,
+                },
+              }),
+            ),
+          { op: "batch_modify_labels", targetId: `chunk:${i}`, logger },
         );
       }
       processed += batch.length;
