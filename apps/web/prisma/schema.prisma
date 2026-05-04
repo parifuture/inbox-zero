@@ -216,6 +216,7 @@ model EmailAccount {
   classificationFeedback ClassificationFeedback[]
   senderDecisions        SenderDecision[]
   senderDecisionAudits   SenderDecisionAudit[]
+  senderDecisionJobs     SenderDecisionJob[]
 
   historicalSenderScan HistoricalSenderScan?
   historicalSenders    HistoricalSender[]
@@ -1582,6 +1583,28 @@ model SenderDecisionAudit {
 
   @@index([emailAccountId, senderEmail])
   @@index([emailAccountId, createdAt])
+}
+
+// Background job that retroactively applies a SenderDecision to existing
+// Gmail messages (EL-357). Safety: trash-only in Phase 1 — no permanent
+// deletes, no empty-trash, starred + sent items are preserved.
+model SenderDecisionJob {
+  id             String       @id @default(cuid())
+  emailAccountId String
+  emailAccount   EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  senderEmail    String // canonicalized
+  action         SenderAction // auto_trash | auto_archive | always_keep
+  status         String       @default("pending") // pending | running | completed | failed
+  progress       Int          @default(0) // messages processed so far
+  total          Int          @default(0) // messages matched by the query
+  error          String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([emailAccountId, senderEmail])
+  @@index([emailAccountId, status])
 }
 
 enum ColdEmailStatus {
