@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/Button";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { landingPageAnalytics } from "@/hooks/useAnalytics";
 
 export function CTAButtons() {

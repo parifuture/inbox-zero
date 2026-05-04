@@ -3,7 +3,7 @@
 import { useCallback, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useAction } from "next-safe-action/hooks";
-import type { PostHog } from "posthog-js/react";
+import type { PostHog } from "@/utils/posthog-client";
 import { onAutoArchive, onDeleteFilter } from "@/utils/actions/client";
 import {
   setNewsletterStatusAction,

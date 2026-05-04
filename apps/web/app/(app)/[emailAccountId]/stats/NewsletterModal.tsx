@@ -3,7 +3,7 @@ import type { DateRange } from "react-day-picker";
 import { BarChart } from "@/app/(app)/[emailAccountId]/stats/BarChart";
 import Link from "next/link";
 import { ExternalLinkIcon } from "lucide-react";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import {
   Dialog,
   DialogContent,

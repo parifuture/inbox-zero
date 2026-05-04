@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { usePostHog, useActiveFeatureFlags } from "posthog-js/react";
-import type { EarlyAccessFeature } from "posthog-js";
+import { usePostHog, useActiveFeatureFlags } from "@/utils/posthog-client";
+import type { EarlyAccessFeature } from "@/utils/posthog-client";
 import { Toggle } from "@/components/Toggle";
 import {
   Table,

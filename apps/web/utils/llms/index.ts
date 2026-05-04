@@ -20,7 +20,7 @@ import {
   TypeValidationError,
 } from "ai";
 import type { LanguageModelV3 } from "@ai-sdk/provider";
-import { withTracing } from "@posthog/ai/vercel";
+// Telemetry tracing removed in EL-359 — self-hosted fork does not emit to PostHog.
 import { jsonrepair } from "jsonrepair";
 import { env } from "@/env";
 import { saveAiUsage } from "@/utils/usage";
@@ -53,7 +53,7 @@ import {
 import { shouldForceNanoModel } from "@/utils/llms/model-usage-guard";
 import { Provider } from "@/utils/llms/config";
 import { createScopedLogger } from "@/utils/logger";
-import { getPosthogLlmClient, isPosthogLlmEvalApproved } from "@/utils/posthog";
+// EL-359: PostHog tracing stripped; imports removed.
 import {
   applyPromptHardeningToMessages,
   applyPromptHardeningToSystem,
@@ -1609,21 +1609,8 @@ function withPosthogTracing({
   provider: string;
   modelName: string;
 }) {
-  const posthogClient = getPosthogLlmClient();
-  if (!posthogClient) return model;
-  const llmEvalsEnabled = isPosthogLlmEvalApproved(userEmail);
-
-  return withTracing(model, posthogClient, {
-    posthogDistinctId: userEmail,
-    posthogPrivacyMode: !llmEvalsEnabled,
-    posthogProperties: {
-      label,
-      $ai_span_name: label,
-      provider,
-      model: modelName,
-      emailAccountId,
-      llmEvalsEnabled,
-      ...(userId ? { userId } : {}),
-    },
-  });
+  // EL-359: telemetry strip — tracing disabled in self-hosted fork. Parameters
+  // retained for call-site compatibility; all downstream PostHog wiring has
+  // been removed.
+  return model;
 }

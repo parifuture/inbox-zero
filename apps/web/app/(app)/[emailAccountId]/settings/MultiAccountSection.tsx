@@ -5,7 +5,7 @@ import { type SubmitHandler, useFieldArray, useForm } from "react-hook-form";
 import { useSession } from "@/utils/auth-client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import useSWR from "swr";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { CrownIcon } from "lucide-react";
 import { capitalCase } from "capital-case";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 import {
   useFeatureFlagEnabled,
   useFeatureFlagVariantKey,
-} from "posthog-js/react";
+} from "@/utils/posthog-client";
 import { env } from "@/env";
 
 export function useCleanerEnabled() {
@@ -77,4 +77,3 @@ export function useWelcomePricingVariant() {
     ) as WelcomePricingVariant) || "control"
   );
 }
-

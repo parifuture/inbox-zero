@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { Button } from "@/components/new-landing/common/Button";
 import { Chat } from "@/components/new-landing/icons/Chat";
 import { landingPageAnalytics } from "@/hooks/useAnalytics";

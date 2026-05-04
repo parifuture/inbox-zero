@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { type SubmitHandler, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { env } from "@/env";
 import {
   PencilIcon,
@@ -355,11 +355,13 @@ export function RuleForm({
     [ruleEditorActions],
   );
 
-  const formErrors = useMemo(() => {
-    return Object.values(formState.errors)
-      .filter((error): error is { message: string } => Boolean(error.message))
-      .map((error) => error.message);
-  }, [formState]);
+  const formErrors = useMemo(
+    () =>
+      Object.values(formState.errors)
+        .filter((error): error is { message: string } => Boolean(error.message))
+        .map((error) => error.message),
+    [formState],
+  );
 
   const typeOptions = useMemo(() => {
     const connectedMessagingChannels = getConnectedRuleNotificationChannels(

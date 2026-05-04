@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,

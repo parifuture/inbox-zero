@@ -6,7 +6,7 @@ import { useOnboardingAnalytics } from "./useAnalytics";
 
 const capture = vi.fn();
 
-vi.mock("posthog-js/react", () => ({
+vi.mock("@/utils/posthog-client", () => ({
   usePostHog: () => ({ capture }),
 }));
 

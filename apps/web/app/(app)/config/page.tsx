@@ -45,7 +45,7 @@ export default async function AdminConfigPage() {
       qstash: !!env.QSTASH_TOKEN,
       tinybird: !!env.TINYBIRD_TOKEN,
       sentry: !!env.NEXT_PUBLIC_SENTRY_DSN,
-      posthog: !!env.NEXT_PUBLIC_POSTHOG_KEY,
+      posthog: false, // EL-359: telemetry stripped
       stripe: !!env.STRIPE_SECRET_KEY,
       lemonSqueezy: !!env.LEMON_SQUEEZY_API_KEY,
     },

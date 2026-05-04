@@ -1,6 +1,6 @@
-import { usePostHog } from "posthog-js/react";
+import { usePostHog } from "@/utils/posthog-client";
 import { useMemo } from "react";
-import type { PostHog } from "posthog-js";
+import type { PostHog } from "@/utils/posthog-client";
 
 type OnboardingAnalyticsProps = {
   step?: number;
