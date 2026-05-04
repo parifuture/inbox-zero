@@ -168,6 +168,14 @@ model EmailAccount {
   digestSchedule  Schedule?
   learnedWritingStyle String?
 
+  // EL-370 kill-switch: when true, autonomous actions (sender-decision gate,
+  // rule executor, backlog applier, scheduled actions) short-circuit and
+  // record what they WOULD have done instead of mutating Gmail.
+  autonomousActionsPaused       Boolean   @default(false)
+  autonomousActionsPausedAt     DateTime?
+  autonomousActionsPausedBy     String?
+  autonomousActionsPauseReason  String?
+
   userId    String
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   accountId String  @unique
@@ -570,6 +578,10 @@ model ExecutedRule {
   reason        String?
   matchMetadata Json? // Stores structured match information (e.g., learned patterns, match types)
 
+  // EL-370: true when the rule would have executed but was suppressed by
+  // the kill-switch. Paired with `status = SUPPRESSED`.
+  suppressedByKillSwitch Boolean @default(false)
+
   // may be null if the rule was deleted
   ruleId String?
   rule   Rule?   @relation(fields: [ruleId], references: [id])
@@ -585,6 +597,7 @@ model ExecutedRule {
   @@index([emailAccountId, messageId])
   @@index([emailAccountId, status, createdAt])
   @@index([emailAccountId, createdAt])
+  @@index([emailAccountId, suppressedByKillSwitch, createdAt])
 }
 
 model ExecutedAction {

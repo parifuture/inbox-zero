@@ -13,6 +13,7 @@ import { AssessUser } from "@/app/(app)/[emailAccountId]/assess";
 import { SentryIdentify } from "@/app/(app)/sentry-identify";
 import { ErrorMessages } from "@/app/(app)/ErrorMessages";
 import { ProviderRateLimitBanner } from "@/app/(app)/ProviderRateLimitBanner";
+import { KillSwitchBanner } from "@/app/(app)/KillSwitchBanner";
 import { QueueInitializer } from "@/store/QueueInitializer";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { EmailViewer } from "@/components/EmailViewer";
@@ -73,6 +74,7 @@ export default async function AppLayout({
       <div className="font-inter">
         <AppProviders>
           <SideNavWithTopNav defaultOpen={!isClosed}>
+            <KillSwitchBanner />
             <ErrorMessages />
             <ProviderRateLimitBanner />
             {children}
