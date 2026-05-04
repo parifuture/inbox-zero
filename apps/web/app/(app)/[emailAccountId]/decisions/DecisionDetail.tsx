@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { ArchiveIcon, MailIcon } from "lucide-react";
 import type { SenderAction } from "@/generated/prisma/enums";
 import type { SenderDecision } from "@/generated/prisma/client";
 import type { SenderMessagesResponse } from "@/app/api/sender-decisions/[senderEmail]/messages/route";
+import type {
+  ApplyRetroResponse,
+  ApplyRetroStatusResponse,
+} from "@/app/api/sender-decisions/[senderEmail]/apply-retro/route";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { LoadingContent } from "@/components/LoadingContent";
@@ -32,7 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { toastInfo } from "@/components/Toast";
+import { toastError, toastSuccess } from "@/components/Toast";
 
 const ACTION_LABELS: Record<SenderAction, string> = {
   auto_trash: "Auto-trash",
@@ -49,12 +53,66 @@ export function DecisionDetail({
   onActionChange: (action: SenderAction) => void;
 }) {
   const [retroOpen, setRetroOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const { data, error, isLoading } = useSWR<SenderMessagesResponse>(
     decision
       ? `/api/sender-decisions/${encodeURIComponent(decision.senderEmail)}/messages?limit=50`
       : null,
   );
+
+  const jobUrl = decision
+    ? `/api/sender-decisions/${encodeURIComponent(decision.senderEmail)}/apply-retro`
+    : null;
+
+  // Poll the latest backlog job for this sender every 2s while one is
+  // pending/running so the UI can show live progress.
+  const { data: jobData, mutate: refreshJob } =
+    useSWR<ApplyRetroStatusResponse>(jobUrl, {
+      refreshInterval: (latest) => {
+        const status = latest?.job?.status;
+        return status === "pending" || status === "running" ? 2000 : 0;
+      },
+    });
+  const job = jobData?.job ?? null;
+  const jobActive = job?.status === "pending" || job?.status === "running";
+
+  useEffect(() => {
+    setRetroOpen(false);
+  }, [decision?.senderEmail]);
+
+  async function startBacklogJob() {
+    if (!decision || !jobUrl) return;
+    setSubmitting(true);
+    try {
+      const resp = await fetch(jobUrl, { method: "POST" });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        toastError({
+          title: "Could not start backlog apply",
+          description: body?.error ?? `HTTP ${resp.status}`,
+        });
+        return;
+      }
+      const parsed = (await resp.json()) as ApplyRetroResponse;
+      toastSuccess({
+        title: "Applying retroactively…",
+        description:
+          parsed.job.status === "running" || parsed.job.status === "pending"
+            ? "Job started. Progress will update live."
+            : `Job ${parsed.job.status}.`,
+      });
+      setRetroOpen(false);
+      await refreshJob();
+    } catch (err) {
+      toastError({
+        title: "Could not start backlog apply",
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   if (!decision) {
     return (
@@ -100,16 +158,26 @@ export function DecisionDetail({
             </SelectContent>
           </Select>
           {decision.action === "auto_trash" ||
-          decision.action === "auto_archive" ? (
+          decision.action === "auto_archive" ||
+          decision.action === "always_keep" ? (
             <Button
               size="sm"
               variant="outline"
               onClick={() => setRetroOpen(true)}
+              disabled={jobActive}
             >
-              Apply retroactively…
+              {jobActive
+                ? `Applying… ${job?.progress ?? 0}/${job?.total ?? 0}`
+                : "Apply retroactively…"}
             </Button>
           ) : null}
         </div>
+        {job && !jobActive ? (
+          <div className="mt-2 text-xs text-muted-foreground">
+            Last run: {job.status} — {job.progress}/{job.total} messages
+            {job.status === "failed" && job.error ? ` (${job.error})` : ""}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -168,27 +236,23 @@ export function DecisionDetail({
             <DialogDescription>
               {decision.action === "auto_trash"
                 ? `Trash ~${decision.messageCount} existing emails from ${decision.senderEmail}?`
-                : `Archive ~${decision.messageCount} existing emails from ${decision.senderEmail}?`}{" "}
-              This uses Gmail trash (30-day recovery), never permanent delete.
+                : decision.action === "auto_archive"
+                  ? `Archive ~${decision.messageCount} existing emails from ${decision.senderEmail}?`
+                  : `Restore any previously trashed emails from ${decision.senderEmail} back to inbox?`}{" "}
+              Uses Gmail trash (30-day recovery). Starred messages and sent
+              items are preserved.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRetroOpen(false)}>
+            <Button
+              variant="ghost"
+              onClick={() => setRetroOpen(false)}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button
-              onClick={() => {
-                // Backlog applier is implemented in a follow-up ticket (EL-357).
-                // This button just records intent for now.
-                toastInfo({
-                  title: "Decision saved",
-                  description:
-                    "Backlog applier not wired yet — see EL-357. The decision will be applied when the applier runs.",
-                });
-                setRetroOpen(false);
-              }}
-            >
-              Confirm
+            <Button onClick={startBacklogJob} disabled={submitting}>
+              {submitting ? "Starting…" : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>
