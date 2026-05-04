@@ -6,6 +6,7 @@ import type { SenderAction } from "@/generated/prisma/enums";
 import type { SenderDecision } from "@/generated/prisma/client";
 import { extractEmailAddress } from "@/utils/email";
 import { canonicalizeSender } from "@/utils/sender-decision";
+import { runGmailOp, GmailPipelineError } from "@/utils/gmail/errors";
 
 const MODULE = "sender-decision.gate";
 
@@ -76,18 +77,40 @@ export async function applySenderDecisionGate(params: {
 
   // Perform the provider-side action BEFORE recording ExecutedRule so a
   // provider failure doesn't leave a misleading APPLIED row behind.
+  //
+  // Routed through `runGmailOp` (EL-377) so failures get structured
+  // classification, retries on transient errors, and NOT_FOUND downgrades
+  // on trash (message already gone — still safe because Gmail Trash only).
   try {
     if (isTest) {
       // no-op
     } else if (decision.action === "auto_trash") {
-      await provider.trashThread(message.threadId, "", "automation");
+      await runGmailOp(
+        () => provider.trashThread(message.threadId, "", "automation"),
+        {
+          op: "trash",
+          targetId: message.threadId,
+          downgradeNotFound: true,
+          notFoundValue: undefined,
+          logger,
+        },
+      );
     } else if (decision.action === "auto_archive") {
-      await provider.archiveMessage(message.id);
+      await runGmailOp(() => provider.archiveMessage(message.id), {
+        op: "archive",
+        targetId: message.id,
+        downgradeNotFound: true,
+        notFoundValue: undefined,
+        logger,
+      });
     }
     // always_keep: intentionally no provider call.
   } catch (err) {
+    const pipelineErr = err instanceof GmailPipelineError ? err : undefined;
     logger.error("sender_decision.gate.provider_failed", {
       err,
+      kind: pipelineErr?.kind,
+      retryable: pipelineErr?.retryable,
       senderEmail: canonical,
       action: decision.action,
       messageId: message.id,
