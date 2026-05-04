@@ -86,10 +86,17 @@ export function useHistoricalSenders(params: HistoricalSendersListParams) {
   );
 }
 
-export function useSenderMessages(senderEmail: string | null) {
+export function useSenderMessages(
+  senderEmail: string | null,
+  opts: { cursor?: string | null; bypassCache?: boolean } = {},
+) {
   const { emailAccountId } = useAccount();
+  const search = new URLSearchParams();
+  if (opts.cursor) search.set("cursor", opts.cursor);
+  if (opts.bypassCache) search.set("bypassCache", "1");
+  const suffix = search.toString() ? `?${search.toString()}` : "";
   const url = senderEmail
-    ? `/api/historical-senders/${encodeURIComponent(senderEmail)}/messages`
+    ? `/api/historical-senders/${encodeURIComponent(senderEmail)}/messages${suffix}`
     : null;
 
   return useSWR<HistoricalSenderMessagesResponse>(
