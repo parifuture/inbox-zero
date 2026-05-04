@@ -104,6 +104,10 @@ const parsedEnv = createEnv({
     DRAFT_LLM_MODEL: z.string().optional(),
     AI_NANO_WEEKLY_SPEND_LIMIT_USD: z.coerce.number().positive().optional(),
 
+    // EL-378: blast-radius guard for sender-decision apply-retro.
+    APPLY_RETRO_SOFT_CAP: z.coerce.number().int().positive().optional(),
+    APPLY_RETRO_HARD_CAP: z.coerce.number().int().positive().optional(),
+
     LLM_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     AZURE_API_KEY: z.string().optional(),

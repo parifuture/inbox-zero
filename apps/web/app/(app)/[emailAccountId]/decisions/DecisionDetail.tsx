@@ -9,8 +9,11 @@ import type { SenderMessagesResponse } from "@/app/api/sender-decisions/[senderE
 import type {
   ApplyRetroResponse,
   ApplyRetroStatusResponse,
+  ApplyRetroPreviewResponse,
 } from "@/app/api/sender-decisions/[senderEmail]/apply-retro/route";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { LoadingContent } from "@/components/LoadingContent";
 import {
@@ -54,6 +57,13 @@ export function DecisionDetail({
 }) {
   const [retroOpen, setRetroOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [preview, setPreview] = useState<ApplyRetroPreviewResponse | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [typedConfirm, setTypedConfirm] = useState("");
+  const [overrideChecked, setOverrideChecked] = useState(false);
 
   const { data, error, isLoading } = useSWR<SenderMessagesResponse>(
     decision
@@ -79,18 +89,64 @@ export function DecisionDetail({
 
   useEffect(() => {
     setRetroOpen(false);
+    setPreview(null);
+    setPreviewError(null);
+    setTypedConfirm("");
+    setOverrideChecked(false);
   }, [decision?.senderEmail]);
 
-  async function startBacklogJob() {
+  async function openRetroModal() {
     if (!decision || !jobUrl) return;
-    setSubmitting(true);
+    setRetroOpen(true);
+    setPreview(null);
+    setPreviewError(null);
+    setTypedConfirm("");
+    setOverrideChecked(false);
+    setPreviewLoading(true);
     try {
-      const resp = await fetch(jobUrl, { method: "POST" });
+      const resp = await fetch(jobUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ preview: true }),
+      });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({}));
+        setPreviewError(body?.error ?? `HTTP ${resp.status}`);
+        return;
+      }
+      const parsed = (await resp.json()) as ApplyRetroPreviewResponse;
+      setPreview(parsed);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function startBacklogJob() {
+    if (!decision || !jobUrl || !preview) return;
+    const overHard = preview.overHardCap || preview.count > preview.hardCap;
+    const overSoft = preview.count > preview.softCap;
+    const body: Record<string, unknown> = {};
+    if (overSoft) {
+      body.confirm = true;
+      body.expectedCount = preview.count;
+    }
+    if (overHard) {
+      body.override = true;
+    }
+    setSubmitting(true);
+    try {
+      const resp = await fetch(jobUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const parsed = await resp.json().catch(() => ({}));
         toastError({
           title: "Could not start backlog apply",
-          description: body?.error ?? `HTTP ${resp.status}`,
+          description: parsed?.error ?? `HTTP ${resp.status}`,
         });
         return;
       }
@@ -163,7 +219,7 @@ export function DecisionDetail({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setRetroOpen(true)}
+              onClick={openRetroModal}
               disabled={jobActive}
             >
               {jobActive
@@ -235,14 +291,71 @@ export function DecisionDetail({
             <DialogTitle>Apply retroactively?</DialogTitle>
             <DialogDescription>
               {decision.action === "auto_trash"
-                ? `Trash ~${decision.messageCount} existing emails from ${decision.senderEmail}?`
+                ? `Trash existing emails from ${decision.senderEmail}?`
                 : decision.action === "auto_archive"
-                  ? `Archive ~${decision.messageCount} existing emails from ${decision.senderEmail}?`
+                  ? `Archive existing emails from ${decision.senderEmail}?`
                   : `Restore any previously trashed emails from ${decision.senderEmail} back to inbox?`}{" "}
               Uses Gmail trash (30-day recovery). Starred messages and sent
               items are preserved.
             </DialogDescription>
           </DialogHeader>
+
+          {previewLoading ? (
+            <div className="text-sm text-muted-foreground">
+              Counting matching emails…
+            </div>
+          ) : previewError ? (
+            <div className="text-sm text-destructive">{previewError}</div>
+          ) : preview ? (
+            (() => {
+              const overHard =
+                preview.overHardCap || preview.count > preview.hardCap;
+              const overSoft = preview.count > preview.softCap;
+              return (
+                <div className="flex flex-col gap-3 text-sm">
+                  <div>
+                    This will affect{" "}
+                    <span className="font-semibold">
+                      {preview.overHardCap
+                        ? `>${preview.hardCap}`
+                        : preview.count}
+                    </span>{" "}
+                    emails from{" "}
+                    <span className="font-mono">{decision.senderEmail}</span>.
+                  </div>
+                  {overSoft ? (
+                    <div className="flex flex-col gap-1">
+                      <div className="text-xs text-muted-foreground">
+                        Over soft cap ({preview.softCap}). Type{" "}
+                        <span className="font-mono font-semibold">APPLY</span>{" "}
+                        to confirm.
+                      </div>
+                      <Input
+                        value={typedConfirm}
+                        onChange={(e) => setTypedConfirm(e.target.value)}
+                        placeholder="APPLY"
+                        autoFocus
+                      />
+                    </div>
+                  ) : null}
+                  {overHard ? (
+                    <div className="flex items-center gap-2 text-xs text-destructive">
+                      <Checkbox
+                        id="apply-retro-override"
+                        checked={overrideChecked}
+                        onCheckedChange={(v) => setOverrideChecked(v === true)}
+                      />
+                      <label htmlFor="apply-retro-override">
+                        Override hard cap ({preview.hardCap}). I understand this
+                        is a large blast radius.
+                      </label>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()
+          ) : null}
+
           <DialogFooter>
             <Button
               variant="ghost"
@@ -251,7 +364,17 @@ export function DecisionDetail({
             >
               Cancel
             </Button>
-            <Button onClick={startBacklogJob} disabled={submitting}>
+            <Button
+              onClick={startBacklogJob}
+              disabled={
+                submitting ||
+                previewLoading ||
+                !preview ||
+                (preview.count > preview.softCap && typedConfirm !== "APPLY") ||
+                ((preview.overHardCap || preview.count > preview.hardCap) &&
+                  !overrideChecked)
+              }
+            >
               {submitting ? "Starting…" : "Confirm"}
             </Button>
           </DialogFooter>
