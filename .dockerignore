@@ -41,3 +41,9 @@ Dockerfile*
 _tmp
 .tmp
 
+
+# Agent workspace symlink (local dev)
+.agents
+**/.agents
+skills
+**/skills
