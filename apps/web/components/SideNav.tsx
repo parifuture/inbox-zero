@@ -28,6 +28,7 @@ import {
   SparklesIcon,
   TagIcon,
   Users2Icon,
+  UserCheckIcon,
   ZapIcon,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -103,6 +104,17 @@ export const useNavigation = () => {
     [currentEmailAccountId],
   );
 
+  const triageItems: NavItem[] = useMemo(
+    () => [
+      {
+        name: "Decisions",
+        href: prefixPath(currentEmailAccountId, "/decisions"),
+        icon: UserCheckIcon,
+      },
+    ],
+    [currentEmailAccountId],
+  );
+
   const cleanupItems: NavItem[] = useMemo(
     () => [
       {
@@ -172,6 +184,7 @@ export const useNavigation = () => {
 
   return {
     manageItems,
+    triageItems,
     cleanupItems,
     moreItems,
   };
@@ -278,6 +291,10 @@ export function SideNav({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarGroup>
                 <SidebarGroupLabel>Manage</SidebarGroupLabel>
                 <SideNavMenu items={navigation.manageItems} activeHref={path} />
+              </SidebarGroup>
+              <SidebarGroup>
+                <SidebarGroupLabel>Triage</SidebarGroupLabel>
+                <SideNavMenu items={navigation.triageItems} activeHref={path} />
               </SidebarGroup>
               <SidebarGroup>
                 <SidebarGroupLabel>Cleanup</SidebarGroupLabel>
