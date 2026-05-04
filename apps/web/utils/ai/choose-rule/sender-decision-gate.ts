@@ -42,6 +42,21 @@ export async function applySenderDecisionGate(params: {
 }): Promise<SenderGateResult> {
   const { emailAccountId, message, provider, logger, isTest } = params;
 
+  // Safety invariant (EL-356 amendment): starred messages are NEVER touched
+  // by the autonomous pipeline, regardless of what the SenderDecision says.
+  // Starred = user-bookmarked, so a blanket auto_trash/auto_archive on the
+  // sender must still let the starred message through to normal evaluation.
+  // Matches the EL-357 backlog applier's `-is:starred` safety filter so the
+  // live-gate and backlog paths agree on what they'll touch.
+  if (message.labelIds?.includes("STARRED")) {
+    logger.info("sender_decision.gate.starred_skip", {
+      messageId: message.id,
+      threadId: message.threadId,
+      module: MODULE,
+    });
+    return { gated: false };
+  }
+
   const fromHeader =
     message.headers?.from ?? extractEmailAddress(message.headers?.from ?? "");
   const canonical = canonicalizeSender(fromHeader);

@@ -7,7 +7,9 @@ vi.mock("@/utils/prisma");
 
 const logger = createTestLogger();
 
-function makeMessage(overrides?: Partial<{ from: string }>) {
+function makeMessage(
+  overrides?: Partial<{ from: string; labelIds: string[] }>,
+) {
   return {
     id: "msg-1",
     threadId: "thread-1",
@@ -17,7 +19,7 @@ function makeMessage(overrides?: Partial<{ from: string }>) {
     subject: "Hi",
     inline: [],
     attachments: [],
-    labelIds: [],
+    labelIds: overrides?.labelIds ?? [],
     headers: {
       from: overrides?.from ?? '"Marketing" <Noreply+promo@Marketing.Example>',
       to: "user@example.com",
@@ -180,6 +182,43 @@ describe("applySenderDecisionGate", () => {
         },
       },
     });
+  });
+
+  it("skips STARRED messages even when sender has auto_trash decision (safety guard)", async () => {
+    const provider = makeProvider();
+    const result = await applySenderDecisionGate({
+      emailAccountId: "ea-1",
+      message: makeMessage({
+        from: "Marketing <noreply@marketing.example>",
+        labelIds: ["INBOX", "STARRED"],
+      }),
+      provider,
+      logger,
+    });
+
+    expect(result).toEqual({ gated: false });
+    // Critical: we must NOT even look up the SenderDecision — starred
+    // messages take the normal rules path regardless of any auto_trash
+    // decision on the sender.
+    expect(prisma.senderDecision.findUnique).not.toHaveBeenCalled();
+    expect(provider.trashThread).not.toHaveBeenCalled();
+    expect(provider.archiveMessage).not.toHaveBeenCalled();
+    expect(prisma.executedRule.create).not.toHaveBeenCalled();
+  });
+
+  it("skips STARRED messages even for auto_archive", async () => {
+    const provider = makeProvider();
+    const result = await applySenderDecisionGate({
+      emailAccountId: "ea-1",
+      message: makeMessage({
+        from: "Marketing <noreply@marketing.example>",
+        labelIds: ["STARRED", "INBOX"],
+      }),
+      provider,
+      logger,
+    });
+    expect(result).toEqual({ gated: false });
+    expect(provider.archiveMessage).not.toHaveBeenCalled();
   });
 
   it("bails out if the provider call fails (no ExecutedRule written)", async () => {
