@@ -108,6 +108,17 @@ const parsedEnv = createEnv({
     APPLY_RETRO_SOFT_CAP: z.coerce.number().int().positive().optional(),
     APPLY_RETRO_HARD_CAP: z.coerce.number().int().positive().optional(),
 
+    // EL-358b: parity-classifier shadow runner feature flags.
+    // Shadow runner is read-only — it writes to ParityDecision and nothing else.
+    // Leave off in production until EL-363 verifies agreement with the sidecar.
+    PARITY_SHADOW_ENABLED: booleanString.optional().default(false),
+    // Stage 4 (Bedrock) costs money per call. Gate it independently so stages
+    // 0-3 can be observed for free.
+    PARITY_SHADOW_BEDROCK_ENABLED: booleanString.optional().default(false),
+    // Email-account primary domain — treated as a protected class in Stage 0
+    // (sidecar hardcoded `ea.com`; the fork must not).
+    PARITY_PRIMARY_DOMAIN: z.string().optional(),
+
     LLM_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     AZURE_API_KEY: z.string().optional(),

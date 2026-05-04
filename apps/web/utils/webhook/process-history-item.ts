@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import prisma from "@/utils/prisma";
 import { runRules } from "@/utils/ai/choose-rule/run-rules";
+import { scheduleParityShadow } from "@/utils/parity-classifier/runner";
 import { categorizeSender } from "@/utils/categorize/senders/categorize";
 import {
   isFilebotEmail,
@@ -191,6 +192,11 @@ export async function processHistoryItem(
     }
 
     logger.info("Pre-rules check", { hasAutomationRules, hasAiAccess });
+
+    // EL-358b shadow runner: observability-only pipeline. Runs via `after()`
+    // so it never adds latency to the live path, and no-ops when the
+    // `PARITY_SHADOW_ENABLED` feature flag is off.
+    scheduleParityShadow({ emailAccount, message: parsedMessage });
 
     if (hasAutomationRules && hasAiAccess) {
       logger.info("Running rules...");
