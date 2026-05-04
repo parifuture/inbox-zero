@@ -9,7 +9,6 @@ import {
   UserIcon,
   ScrollTextIcon,
   UsersIcon,
-  ShieldCheckIcon,
   type LucideIcon,
   CalendarIcon,
   FileTextIcon,
@@ -98,12 +97,6 @@ function useNavigationItems(): NavigationItem[] {
             },
           ]
         : []),
-      {
-        name: "Cold Email Blocker",
-        href: prefixPath(emailAccountId, "/cold-email-blocker"),
-        icon: ShieldCheckIcon,
-        keywords: ["block", "cold", "spam", "filter"],
-      },
     ],
     [
       emailAccountId,
@@ -122,17 +115,19 @@ export function useCommandPaletteCommands() {
   const { data: user, isLoading: userLoading } = useUser();
   const navigationItems = useNavigationItems();
 
-  const navigationCommands = useMemo<Command[]>(() => {
-    return navigationItems.map((item, index) => ({
-      id: `nav-${item.name.toLowerCase().replace(/\s+/g, "-")}`,
-      label: `Go to ${item.name}`,
-      icon: item.icon,
-      section: "navigation" as const,
-      priority: index + 10,
-      keywords: [item.name.toLowerCase(), ...(item.keywords || [])],
-      action: () => router.push(item.href),
-    }));
-  }, [navigationItems, router]);
+  const navigationCommands = useMemo<Command[]>(
+    () =>
+      navigationItems.map((item, index) => ({
+        id: `nav-${item.name.toLowerCase().replace(/\s+/g, "-")}`,
+        label: `Go to ${item.name}`,
+        icon: item.icon,
+        section: "navigation" as const,
+        priority: index + 10,
+        keywords: [item.name.toLowerCase(), ...(item.keywords || [])],
+        action: () => router.push(item.href),
+      })),
+    [navigationItems, router],
+  );
 
   const settingsCommands = useMemo<Command[]>(
     () => [
