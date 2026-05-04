@@ -7,6 +7,13 @@ import { scanHistoricalSenders } from "@/app/api/historical-senders/scan-runner"
 
 const CUTOFF_DATE = new Date("2024-01-01T00:00:00.000Z");
 
+import {
+  ORPHAN_SCAN_TIMEOUT_MS,
+  isOrphanedScan,
+} from "@/app/api/historical-senders/orphan-detection";
+
+export { ORPHAN_SCAN_TIMEOUT_MS };
+
 export type HistoricalScanResponse =
   | { status: "idle" }
   | {
@@ -49,6 +56,31 @@ export const GET = withEmailProvider(
         status: "idle",
       } satisfies HistoricalScanResponse);
     }
+
+    // Orphaned-scan recovery (EL-323 blocker): if the row is stuck at
+    // `running` with no heartbeat in ORPHAN_SCAN_TIMEOUT_MS, mark it failed
+    // so the UI can rerun. Safe to do in a GET — we already return the
+    // latest scan row, this just repairs a stale state.
+    if (isOrphanedScan(scan)) {
+      const repaired = await prisma.historicalSenderScan.update({
+        where: { emailAccountId },
+        data: {
+          status: "error",
+          error: `Scan orphaned (no heartbeat for >${Math.round(
+            ORPHAN_SCAN_TIMEOUT_MS / 60_000,
+          )} min). Safe to rerun.`,
+          completedAt: new Date(),
+        },
+      });
+      request.logger.warn("historical-scan.orphan_recovered", {
+        emailAccountId,
+        lastHeartbeat: scan.updatedAt,
+      });
+      return NextResponse.json(
+        serializeScan(repaired) satisfies HistoricalScanResponse,
+      );
+    }
+
     return NextResponse.json(
       serializeScan(scan) satisfies HistoricalScanResponse,
     );
@@ -75,7 +107,11 @@ export const POST = withEmailProvider(
       where: { emailAccountId },
     });
 
-    if (existing && existing.status === "running") {
+    if (
+      existing &&
+      existing.status === "running" &&
+      !isOrphanedScan(existing)
+    ) {
       return NextResponse.json(
         serializeScan(existing) satisfies HistoricalScanResponse,
       );

@@ -83,6 +83,24 @@ async function flushAggregates(
   }
 }
 
+// Exported for tests — keeps the scan + archive queries in sync and
+// makes safety filters visible.
+export function buildScanQuery(cutoffDate: Date): string {
+  const yyyy = cutoffDate.getUTCFullYear();
+  const mm = String(cutoffDate.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(cutoffDate.getUTCDate()).padStart(2, "0");
+  // Safety filter (EL-323 blocker): never aggregate our own sent mail as an
+  // incoming "sender", and skip anything already trashed.
+  return `before:${yyyy}/${mm}/${dd} -in:sent -in:trash`;
+}
+
+export function buildArchiveQuery(senderEmail: string): string {
+  // `in:inbox` already excludes sent+trash by construction, but we keep the
+  // explicit `-in:sent -in:trash` for defence-in-depth and to mirror the
+  // scan query so a future reviewer can't accidentally widen either one.
+  return `from:${senderEmail} before:2024/01/01 in:inbox -in:sent -in:trash`;
+}
+
 export async function scanHistoricalSenders({
   emailAccountId,
   gmail,
@@ -95,11 +113,7 @@ export async function scanHistoricalSenders({
   const log = logger.with({ emailAccountId });
   log.info("Starting historical sender scan", { cutoffDate });
 
-  // Format: YYYY/MM/DD as Gmail expects
-  const yyyy = cutoffDate.getUTCFullYear();
-  const mm = String(cutoffDate.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(cutoffDate.getUTCDate()).padStart(2, "0");
-  const query = `before:${yyyy}/${mm}/${dd}`;
+  const query = buildScanQuery(cutoffDate);
 
   const accessToken = getAccessTokenFromClient(gmail);
 

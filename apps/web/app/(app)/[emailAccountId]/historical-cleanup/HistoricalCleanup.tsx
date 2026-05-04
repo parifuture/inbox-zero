@@ -127,7 +127,13 @@ export function HistoricalCleanup() {
     setSelectedRow(null);
   }, []);
 
-  const selectedCount = selectedRows.size;
+  const selectedSenders = useMemo(
+    () =>
+      senders
+        .filter((s) => selectedRows.has(s.senderEmail))
+        .map((s) => ({ senderEmail: s.senderEmail, count: s.count })),
+    [senders, selectedRows],
+  );
 
   return (
     <PageWrapper>
@@ -181,7 +187,7 @@ export function HistoricalCleanup() {
       </Card>
 
       <BulkActionsBar
-        selectedCount={selectedCount}
+        selectedSenders={selectedSenders}
         onArchive={() => handleArchive(Array.from(selectedRows))}
         onSkip={() => handleSkip(Array.from(selectedRows))}
         onClear={() => setSelectedRows(new Set())}
