@@ -34,6 +34,7 @@ function makeProvider() {
   return {
     trashThread: vi.fn().mockResolvedValue(undefined),
     archiveMessage: vi.fn().mockResolvedValue(undefined),
+    labelMessage: vi.fn().mockResolvedValue({}),
   } as any;
 }
 
@@ -240,5 +241,114 @@ describe("applySenderDecisionGate", () => {
 
     expect(result).toEqual({ gated: false });
     expect(prisma.executedRule.create).not.toHaveBeenCalled();
+  });
+
+  it("always_keep with keepLabelId applies the label via provider.labelMessage", async () => {
+    prisma.senderDecision.findUnique.mockResolvedValueOnce({
+      id: "sd-kl",
+      action: "always_keep",
+      source: "user",
+      senderEmail: "vip@friend.com",
+      keepLabelId: "Label_42",
+      keepLabelName: "VIP",
+    } as any);
+    prisma.executedRule.create.mockResolvedValueOnce({ id: "er-kl" } as any);
+    prisma.senderDecision.update.mockResolvedValueOnce({} as any);
+
+    const provider = makeProvider();
+    const result = await applySenderDecisionGate({
+      emailAccountId: "ea-1",
+      message: makeMessage({ from: "VIP <vip@friend.com>" }),
+      provider,
+      logger,
+    });
+
+    expect(result).toMatchObject({ gated: true, action: "always_keep" });
+    expect(provider.labelMessage).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      labelId: "Label_42",
+      labelName: "VIP",
+    });
+    expect(provider.trashThread).not.toHaveBeenCalled();
+    expect(provider.archiveMessage).not.toHaveBeenCalled();
+  });
+
+  it("always_keep without keepLabelId does NOT call labelMessage", async () => {
+    prisma.senderDecision.findUnique.mockResolvedValueOnce({
+      id: "sd-nokl",
+      action: "always_keep",
+      source: "user",
+      senderEmail: "vip@friend.com",
+      keepLabelId: null,
+      keepLabelName: null,
+    } as any);
+    prisma.executedRule.create.mockResolvedValueOnce({ id: "er-nokl" } as any);
+    prisma.senderDecision.update.mockResolvedValueOnce({} as any);
+
+    const provider = makeProvider();
+    const result = await applySenderDecisionGate({
+      emailAccountId: "ea-1",
+      message: makeMessage({ from: "VIP <vip@friend.com>" }),
+      provider,
+      logger,
+    });
+
+    expect(result).toMatchObject({ gated: true, action: "always_keep" });
+    expect(provider.labelMessage).not.toHaveBeenCalled();
+  });
+
+  it("keep_label.invalid: clears keepLabelId when Gmail returns label-not-found and still records ExecutedRule", async () => {
+    prisma.senderDecision.findUnique
+      // First call: gate lookup.
+      .mockResolvedValueOnce({
+        id: "sd-bad",
+        action: "always_keep",
+        source: "user",
+        senderEmail: "vip@friend.com",
+        keepLabelId: "Label_Deleted",
+        keepLabelName: "Gone",
+      } as any)
+      // Second call: inside changeSenderDecision → before-snapshot.
+      .mockResolvedValueOnce({
+        id: "sd-bad",
+        action: "always_keep",
+        source: "user",
+        senderEmail: "vip@friend.com",
+        keepLabelId: "Label_Deleted",
+        keepLabelName: "Gone",
+      } as any);
+    prisma.senderDecision.upsert.mockResolvedValueOnce({
+      id: "sd-bad",
+      action: "always_keep",
+      senderEmail: "vip@friend.com",
+      source: "user",
+      keepLabelId: null,
+      keepLabelName: null,
+    } as any);
+    prisma.executedRule.create.mockResolvedValueOnce({ id: "er-bad" } as any);
+    prisma.senderDecision.update.mockResolvedValueOnce({} as any);
+
+    const provider = makeProvider();
+    provider.labelMessage.mockRejectedValueOnce(
+      Object.assign(new Error("Requested entity was not found."), {
+        status: 404,
+      }),
+    );
+
+    const result = await applySenderDecisionGate({
+      emailAccountId: "ea-1",
+      message: makeMessage({ from: "VIP <vip@friend.com>" }),
+      provider,
+      logger,
+    });
+
+    // Keep still succeeds — label-not-found is recoverable, not a keep failure.
+    expect(result).toMatchObject({ gated: true, action: "always_keep" });
+    expect(prisma.executedRule.create).toHaveBeenCalledTimes(1);
+    // Decision was updated to clear keepLabelId/Name via changeSenderDecision → upsert.
+    expect(prisma.senderDecision.upsert).toHaveBeenCalled();
+    const upsertArg = prisma.senderDecision.upsert.mock.calls[0][0];
+    expect(upsertArg.update.keepLabelId).toBeNull();
+    expect(upsertArg.update.keepLabelName).toBeNull();
   });
 });
