@@ -6,7 +6,12 @@ import type { SenderAction } from "@/generated/prisma/enums";
 import type { SenderDecision } from "@/generated/prisma/client";
 import { extractEmailAddress } from "@/utils/email";
 import { canonicalizeSender } from "@/utils/sender-decision";
-import { runGmailOp, GmailPipelineError } from "@/utils/gmail/errors";
+import {
+  runGmailOp,
+  GmailPipelineError,
+  GmailErrorKind,
+} from "@/utils/gmail/errors";
+import { changeSenderDecision } from "@/utils/sender-decision/change";
 
 const MODULE = "sender-decision.gate";
 
@@ -103,8 +108,75 @@ export async function applySenderDecisionGate(params: {
         notFoundValue: undefined,
         logger,
       });
+    } else if (decision.action === "always_keep" && decision.keepLabelId) {
+      // EL-384: apply user-chosen Gmail label to kept messages so Gmail
+      // filters / visual cues still fire even though we short-circuit the
+      // rules engine. If the label was deleted in Gmail since the decision
+      // was saved, clear it on the decision and continue — do NOT fail the
+      // keep path.
+      try {
+        await runGmailOp(
+          () =>
+            provider.labelMessage({
+              messageId: message.id,
+              labelId: decision.keepLabelId as string,
+              labelName: decision.keepLabelName ?? null,
+            }),
+          {
+            op: "modify_labels",
+            targetId: message.id,
+            downgradeNotFound: false,
+            logger,
+          },
+        );
+      } catch (labelErr) {
+        const pipelineErr =
+          labelErr instanceof GmailPipelineError ? labelErr : undefined;
+        if (pipelineErr?.kind === GmailErrorKind.NOT_FOUND) {
+          logger.warn("sender_decision.gate.keep_label.invalid", {
+            err: labelErr,
+            senderEmail: canonical,
+            decisionId: decision.id,
+            keepLabelId: decision.keepLabelId,
+            keepLabelName: decision.keepLabelName,
+            messageId: message.id,
+            module: MODULE,
+          });
+          try {
+            await changeSenderDecision({
+              emailAccountId,
+              senderEmail: canonical,
+              action: decision.action,
+              decisionSource: decision.source,
+              auditSource: "sender-decision-gate:keep-label-invalid",
+              actor: "system",
+              allowOverwriteUser: true,
+              keepLabelId: null,
+              keepLabelName: null,
+              reason: "keep_label.invalid: Gmail label not found",
+            });
+          } catch (clearErr) {
+            logger.warn("sender_decision.gate.keep_label.clear_failed", {
+              err: clearErr,
+              decisionId: decision.id,
+              module: MODULE,
+            });
+          }
+        } else {
+          // Non-404 label failure: log but don't fail the keep path — the
+          // message is still successfully kept.
+          logger.warn("sender_decision.gate.keep_label_failed", {
+            err: labelErr,
+            kind: pipelineErr?.kind,
+            senderEmail: canonical,
+            decisionId: decision.id,
+            messageId: message.id,
+            module: MODULE,
+          });
+        }
+      }
     }
-    // always_keep: intentionally no provider call.
+    // always_keep without keepLabelId: intentionally no provider call.
   } catch (err) {
     const pipelineErr = err instanceof GmailPipelineError ? err : undefined;
     logger.error("sender_decision.gate.provider_failed", {

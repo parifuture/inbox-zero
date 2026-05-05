@@ -66,6 +66,8 @@ export type UpsertDecisionInput = {
   lastSeenAt?: Date | null;
   messageCount?: number;
   autoAppliedAt?: Date | null;
+  keepLabelId?: string | null;
+  keepLabelName?: string | null;
   /**
    * When true (default), existing rows whose `source === "user"` are NOT
    * overwritten by non-user upserts. User decisions are sticky.
@@ -90,6 +92,8 @@ export async function upsertDecision(
     lastSeenAt = null,
     messageCount,
     autoAppliedAt = null,
+    keepLabelId,
+    keepLabelName,
     protectUserDecisions = true,
   } = input;
 
@@ -115,6 +119,8 @@ export async function upsertDecision(
         messageCount:
           typeof messageCount === "number" ? messageCount : undefined,
         autoAppliedAt: autoAppliedAt ?? undefined,
+        keepLabelId: keepLabelId === undefined ? undefined : keepLabelId,
+        keepLabelName: keepLabelName === undefined ? undefined : keepLabelName,
       }
     : {
         senderDomain,
@@ -126,6 +132,8 @@ export async function upsertDecision(
         messageCount:
           typeof messageCount === "number" ? messageCount : undefined,
         autoAppliedAt: autoAppliedAt ?? undefined,
+        keepLabelId: keepLabelId === undefined ? undefined : keepLabelId,
+        keepLabelName: keepLabelName === undefined ? undefined : keepLabelName,
       };
 
   return prisma.senderDecision.upsert({
@@ -143,6 +151,8 @@ export async function upsertDecision(
       lastSeenAt,
       messageCount: messageCount ?? 0,
       autoAppliedAt,
+      keepLabelId: keepLabelId ?? null,
+      keepLabelName: keepLabelName ?? null,
     },
     update: updateData,
   });

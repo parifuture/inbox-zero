@@ -1533,6 +1533,8 @@ model SenderDecision {
   lastSeenAt     DateTime?
   messageCount   Int          @default(0)
   autoAppliedAt  DateTime?
+  keepLabelId    String?
+  keepLabelName  String?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 

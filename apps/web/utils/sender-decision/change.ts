@@ -49,6 +49,8 @@ export interface ChangeSenderDecisionInput {
   emailAccountId: string;
   /** Extra upsert metadata — passed through to `upsertDecision`. */
   firstSeenAt?: Date | null;
+  keepLabelId?: string | null;
+  keepLabelName?: string | null;
   /** Optional kind hint. Derived automatically if omitted. */
   kind?: ChangeSenderDecisionKind;
   lastSeenAt?: Date | null;
@@ -91,6 +93,8 @@ export async function changeSenderDecision(
     lastSeenAt: input.lastSeenAt ?? null,
     messageCount: input.messageCount,
     autoAppliedAt: input.autoAppliedAt ?? null,
+    keepLabelId: input.keepLabelId,
+    keepLabelName: input.keepLabelName,
     protectUserDecisions: !input.allowOverwriteUser,
   });
 
