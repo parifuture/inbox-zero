@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DecisionDetail } from "@/app/(app)/[emailAccountId]/decisions/DecisionDetail";
+import { DecisionsOnboarding } from "@/app/(app)/[emailAccountId]/decisions/DecisionsOnboarding";
 import { toastError, toastSuccess } from "@/components/Toast";
 
 const ACTION_OPTIONS: {
@@ -71,6 +72,7 @@ export function Decisions() {
   const [newSender, setNewSender] = useState("");
   const [bulkAction, setBulkAction] = useState<SenderAction>("auto_trash");
   const [pending, setPending] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
   const query = new URLSearchParams();
   if (search) query.set("search", search);
@@ -83,6 +85,18 @@ export function Decisions() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+
+  // EL-374 — onboarding appears on the very first visit (no SenderDecision
+  // rows yet) and only when no filters are narrowing the list. It's a one-
+  // time nudge: once the user commits any decision, `total` flips > 0 and
+  // the banner unmounts naturally.
+  const showOnboarding =
+    !isLoading &&
+    !error &&
+    total === 0 &&
+    !onboardingDismissed &&
+    !search &&
+    actionFilter === "all";
 
   const allSelected = useMemo(
     () => items.length > 0 && items.every((i) => selected.has(i.senderEmail)),
@@ -225,6 +239,15 @@ export function Decisions() {
           </Button>
         </div>
       </div>
+
+      {showOnboarding ? (
+        <DecisionsOnboarding
+          onDone={async () => {
+            setOnboardingDismissed(true);
+            await mutate();
+          }}
+        />
+      ) : null}
 
       {selected.size > 0 ? (
         <div className="flex items-center gap-2 mb-4 p-2 bg-muted rounded">
