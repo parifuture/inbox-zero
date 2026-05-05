@@ -1,7 +1,11 @@
 import type { gmail_v1 } from "@googleapis/gmail";
 import prisma from "@/utils/prisma";
 import { GmailLabel } from "@/utils/gmail/label";
-import { withGmailRetry } from "@/utils/gmail/retry";
+import {
+  runGmailOp,
+  GmailPipelineError,
+  GmailErrorKind,
+} from "@/utils/gmail/errors";
 import { createScopedLogger, type Logger } from "@/utils/logger";
 import { sleep } from "@/utils/sleep";
 
@@ -173,20 +177,41 @@ export async function untrashMessages(params: {
       if (deps.batchUntrash) {
         await deps.batchUntrash(batch);
       } else {
-        await withGmailRetry(() =>
-          deps.gmail.users.messages.batchModify({
-            userId: "me",
-            requestBody: {
-              ids: batch,
-              addLabelIds: [GmailLabel.INBOX],
-              removeLabelIds: [GmailLabel.TRASH],
-            },
-          }),
+        // Routed through `runGmailOp` (EL-377 / EL-382) so failures get
+        // structured classification + retry semantics; partial-batch
+        // NOT_FOUND still counts below.
+        await runGmailOp(
+          () =>
+            deps.gmail.users.messages.batchModify({
+              userId: "me",
+              requestBody: {
+                ids: batch,
+                addLabelIds: [GmailLabel.INBOX],
+                removeLabelIds: [GmailLabel.TRASH],
+              },
+            }),
+          {
+            op: "batch_untrash",
+            targetId: `chunk:${i}:${batch.length}`,
+            logger,
+          },
         );
       }
       restored += batch.length;
       restoredIds.push(...batch);
     } catch (err) {
+      if (
+        err instanceof GmailPipelineError &&
+        err.kind === GmailErrorKind.NOT_FOUND
+      ) {
+        notFound += batch.length;
+        logger.warn("safety.undo.batch_not_found", {
+          chunk: i,
+          size: batch.length,
+          module: MODULE,
+        });
+        continue;
+      }
       const message = err instanceof Error ? err.message : String(err);
       // Gmail doesn't distinguish "not found" cleanly in batchModify \u2014 the
       // endpoint is best-effort. We surface the error count and keep going

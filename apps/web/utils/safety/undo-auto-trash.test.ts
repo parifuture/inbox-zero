@@ -115,5 +115,58 @@ describe("undo-auto-trash (EL-367)", () => {
       expect(result.failed).toBe(5);
       expect(result.notFound).toBe(0);
     });
+
+    it("routes the real Gmail batchModify through runGmailOp (EL-382)", async () => {
+      const ids = ["m1", "m2", "m3"];
+      const batchModify = vi.fn().mockResolvedValue({ status: 200 });
+      const gmail = {
+        users: { messages: { batchModify } },
+      } as any;
+      const result = await untrashMessages({
+        messageIds: ids,
+        logger,
+        deps: { gmail, sleepMs: async () => {} },
+      });
+      expect(batchModify).toHaveBeenCalledTimes(1);
+      expect(batchModify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "me",
+          requestBody: expect.objectContaining({
+            ids,
+            addLabelIds: ["INBOX"],
+            removeLabelIds: ["TRASH"],
+          }),
+        }),
+      );
+      expect(result.restored).toBe(3);
+      expect(result.failed).toBe(0);
+      expect(result.notFound).toBe(0);
+    });
+
+    it("runGmailOp surfaces 404 as notFound without stalling later chunks", async () => {
+      const ids = Array.from({ length: 1500 }, (_, i) => `m${i}`);
+      const batchModify = vi
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error("Not Found"), {
+            code: 404,
+            status: 404,
+          }),
+        )
+        .mockResolvedValueOnce({ status: 200 });
+      const gmail = {
+        users: { messages: { batchModify } },
+      } as any;
+      const result = await untrashMessages({
+        messageIds: ids,
+        logger,
+        deps: { gmail, sleepMs: async () => {} },
+      });
+      expect(batchModify).toHaveBeenCalledTimes(2);
+      // First chunk (1000) classified as not-found; second chunk (500) restored.
+      expect(result.notFound).toBe(1000);
+      expect(result.restored).toBe(500);
+      expect(result.failed).toBe(0);
+    });
   });
 });
