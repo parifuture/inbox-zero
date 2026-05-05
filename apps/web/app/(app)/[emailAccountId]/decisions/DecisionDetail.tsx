@@ -51,9 +51,11 @@ const ACTION_LABELS: Record<SenderAction, string> = {
 export function DecisionDetail({
   decision,
   onActionChange,
+  applyRetroSignal,
 }: {
   decision: SenderDecision | null;
   onActionChange: (action: SenderAction) => void;
+  applyRetroSignal?: number;
 }) {
   const [retroOpen, setRetroOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -94,6 +96,24 @@ export function DecisionDetail({
     setTypedConfirm("");
     setOverrideChecked(false);
   }, [decision?.senderEmail]);
+
+  // Parent fires this signal when the user presses "x" on the focused row.
+  // Skip the initial mount (signal === 0). We intentionally depend only on
+  // the signal counter — reacting to decision/jobActive changes would spam
+  // the modal.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (!applyRetroSignal) return;
+    if (!decision) return;
+    if (
+      decision.action !== "auto_trash" &&
+      decision.action !== "auto_archive" &&
+      decision.action !== "always_keep"
+    )
+      return;
+    if (jobActive) return;
+    openRetroModal();
+  }, [applyRetroSignal]);
 
   async function openRetroModal() {
     if (!decision || !jobUrl) return;
