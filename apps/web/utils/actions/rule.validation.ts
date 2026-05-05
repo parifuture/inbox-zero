@@ -92,12 +92,15 @@ const zodSystemRule = z.enum([
   SystemType.AWAITING_REPLY,
   SystemType.FYI,
   SystemType.ACTIONED,
-  SystemType.COLD_EMAIL,
   SystemType.NEWSLETTER,
   SystemType.MARKETING,
   SystemType.CALENDAR,
   SystemType.RECEIPT,
   SystemType.NOTIFICATION,
+  // EL-361b: Cold Email Blocker is stripped but the enum value is kept in the
+  // DB (Postgres cannot drop enum values), so retain it here to preserve
+  // type-compat with existing Rule rows (which are deleted at migration time).
+  SystemType.COLD_EMAIL,
 ]);
 
 const zodAiCondition = z.object({
@@ -258,14 +261,13 @@ export const createRuleBody = z.object({
         );
 
         // Filter out empty static conditions (where the active field has no value)
-        const nonEmptyStaticConditions = staticConditions.filter((c) => {
-          return (
+        const nonEmptyStaticConditions = staticConditions.filter(
+          (c) =>
             c.from?.trim() ||
             c.to?.trim() ||
             c.subject?.trim() ||
-            c.body?.trim()
-          );
-        });
+            c.body?.trim(),
+        );
 
         if (nonEmptyStaticConditions.length <= 1) {
           return true; // No duplicates possible

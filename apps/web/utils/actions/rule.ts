@@ -396,7 +396,6 @@ export const createRulesOnboardingAction = actionClient
         SystemType.CALENDAR,
         SystemType.RECEIPT,
         SystemType.NOTIFICATION,
-        SystemType.COLD_EMAIL,
       ];
 
       for (const type of systemRules) {

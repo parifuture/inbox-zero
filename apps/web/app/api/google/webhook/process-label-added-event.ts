@@ -1,15 +1,11 @@
 import type { gmail_v1 } from "@googleapis/gmail";
 import {
   ActionType,
-  GroupItemSource,
-  GroupItemType,
   ClassificationFeedbackEventType,
-  SystemType,
 } from "@/generated/prisma/enums";
-import { saveLearnedPattern } from "@/utils/rule/learned-patterns";
 import type { EmailAccountWithAI } from "@/utils/llms/types";
 import type { EmailProvider } from "@/utils/email/types";
-import { GMAIL_SYSTEM_LABELS, GmailLabel } from "@/utils/gmail/label";
+import { GMAIL_SYSTEM_LABELS } from "@/utils/gmail/label";
 import type { Logger } from "@/utils/logger";
 import prisma from "@/utils/prisma";
 import { isEligibleForClassificationFeedback } from "@/utils/rule/consts";
@@ -20,9 +16,10 @@ import {
 import { fetchSenderFromMessage } from "@/app/api/google/webhook/fetch-sender-from-message";
 
 /**
- * When labels are added to an email:
- * - SPAM label: learn sender as cold email (existing behavior)
- * - Other labels that map to rules: record as classification feedback
+ * When labels are added to an email with a system meaning, record it as
+ * classification feedback so the sender-decision / learned-pattern pipelines
+ * can react. EL-361b: the legacy SPAM → cold-email learning was removed with
+ * the rest of the Cold Email Blocker.
  */
 export async function handleLabelAddedEvent(
   message: gmail_v1.Schema$HistoryLabelAdded,
@@ -45,12 +42,11 @@ export async function handleLabelAddedEvent(
     return;
   }
 
-  const hasSpam = addedLabelIds.includes(GmailLabel.SPAM);
   const classifiableLabelIds = addedLabelIds.filter(
     (labelId) => !GMAIL_SYSTEM_LABELS.includes(labelId),
   );
 
-  if (!hasSpam && classifiableLabelIds.length === 0) {
+  if (classifiableLabelIds.length === 0) {
     logger.trace("No actionable labels added, skipping", {
       messageId,
       addedLabelIds,
@@ -60,16 +56,6 @@ export async function handleLabelAddedEvent(
 
   const sender = await fetchSenderFromMessage(messageId, provider, logger);
   if (!sender) return;
-
-  if (hasSpam) {
-    await learnColdEmailFromSpam({
-      sender,
-      messageId,
-      threadId,
-      emailAccountId,
-      logger,
-    });
-  }
 
   await Promise.all(
     classifiableLabelIds.map((labelId) =>
@@ -83,76 +69,6 @@ export async function handleLabelAddedEvent(
       }),
     ),
   );
-}
-
-async function learnColdEmailFromSpam({
-  sender,
-  messageId,
-  threadId,
-  emailAccountId,
-  logger,
-}: {
-  sender: string;
-  messageId: string;
-  threadId: string;
-  emailAccountId: string;
-  logger: Logger;
-}) {
-  logger.info("SPAM label added, learning cold email pattern", {
-    messageId,
-    threadId,
-  });
-
-  const coldEmailRule = await prisma.rule.findFirst({
-    where: {
-      emailAccountId,
-      systemType: SystemType.COLD_EMAIL,
-      enabled: true,
-    },
-    select: { id: true, groupId: true },
-  });
-
-  if (!coldEmailRule) {
-    logger.info("No Cold Email rule found for account, skipping");
-    return;
-  }
-
-  // Don't overwrite existing patterns (e.g., AI classification)
-  if (coldEmailRule.groupId) {
-    const existing = await prisma.groupItem.findUnique({
-      where: {
-        groupId_type_value: {
-          groupId: coldEmailRule.groupId,
-          type: GroupItemType.FROM,
-          value: sender,
-        },
-      },
-      select: { id: true },
-    });
-
-    if (existing) {
-      logger.trace("Sender already in cold email group, skipping", {
-        sender,
-      });
-      return;
-    }
-  }
-
-  logger.trace("Saving cold email learned pattern from SPAM action", {
-    sender,
-  });
-
-  await saveLearnedPattern({
-    emailAccountId,
-    from: sender,
-    ruleId: coldEmailRule.id,
-    exclude: false,
-    logger,
-    messageId,
-    threadId,
-    reason: "Marked as spam by user",
-    source: GroupItemSource.LABEL_ADDED,
-  });
 }
 
 async function recordClassificationFromLabelAdd({

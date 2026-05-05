@@ -7,7 +7,7 @@ import { hasCronSecret } from "@/utils/cron";
 import { isValidInternalApiKey } from "@/utils/internal-api";
 import { captureException } from "@/utils/error";
 import prisma from "@/utils/prisma";
-import { SystemType, ThreadTrackerType } from "@/generated/prisma/enums";
+import { ThreadTrackerType } from "@/generated/prisma/enums";
 import type { Logger } from "@/utils/logger";
 import { getMessagesBatch } from "@/utils/gmail/message";
 import { decodeSnippet } from "@/utils/gmail/decode";
@@ -125,68 +125,49 @@ async function sendEmail({
     return { success: false };
   }
 
-  const coldEmailRule = await prisma.rule.findUnique({
-    where: {
-      emailAccountId_systemType: {
-        emailAccountId,
-        systemType: SystemType.COLD_EMAIL,
-      },
-    },
-    select: { id: true },
-  });
+  const coldEmailers: Array<{
+    from: string;
+    subject: string;
+    sentAt: Date;
+  }> = [];
 
   // Get counts and recent threads for each type
-  const [counts, needsReply, awaitingReply, coldExecutedRules] =
-    await Promise.all([
-      // total count
-      // NOTE: should really be distinct by threadId. this will cause a mismatch in some cases
-      prisma.threadTracker.groupBy({
-        by: ["type"],
-        where: {
-          emailAccountId,
-          resolved: false,
-        },
-        _count: true,
-      }),
-      // needs reply
-      prisma.threadTracker.findMany({
-        where: {
-          emailAccountId,
-          type: ThreadTrackerType.NEEDS_REPLY,
-          resolved: false,
-        },
-        orderBy: { sentAt: "desc" },
-        take: 20,
-        distinct: ["threadId"],
-      }),
-      // awaiting reply
-      prisma.threadTracker.findMany({
-        where: {
-          emailAccountId,
-          type: ThreadTrackerType.AWAITING,
-          resolved: false,
-          // only show emails that are more than 3 days overdue
-          sentAt: { lt: subHours(new Date(), 24 * 3) },
-        },
-        orderBy: { sentAt: "desc" },
-        take: 20,
-        distinct: ["threadId"],
-      }),
-      // cold emails
-      coldEmailRule
-        ? prisma.executedRule.findMany({
-            where: {
-              ruleId: coldEmailRule.id,
-              automated: true,
-              createdAt: { gt: cutOffDate },
-            },
-            select: {
-              messageId: true,
-              createdAt: true,
-            },
-          })
-        : Promise.resolve([]),
-    ]);
+  const [counts, needsReply, awaitingReply] = await Promise.all([
+    // total count
+    // NOTE: should really be distinct by threadId. this will cause a mismatch in some cases
+    prisma.threadTracker.groupBy({
+      by: ["type"],
+      where: {
+        emailAccountId,
+        resolved: false,
+      },
+      _count: true,
+    }),
+    // needs reply
+    prisma.threadTracker.findMany({
+      where: {
+        emailAccountId,
+        type: ThreadTrackerType.NEEDS_REPLY,
+        resolved: false,
+      },
+      orderBy: { sentAt: "desc" },
+      take: 20,
+      distinct: ["threadId"],
+    }),
+    // awaiting reply
+    prisma.threadTracker.findMany({
+      where: {
+        emailAccountId,
+        type: ThreadTrackerType.AWAITING,
+        resolved: false,
+        // only show emails that are more than 3 days overdue
+        sentAt: { lt: subHours(new Date(), 24 * 3) },
+      },
+      orderBy: { sentAt: "desc" },
+      take: 20,
+      distinct: ["threadId"],
+    }),
+  ]);
 
   const typeCounts = Object.fromEntries(
     counts.map((count) => [count.type, count._count]),
@@ -196,7 +177,6 @@ async function sendEmail({
   const messageIds = [
     ...needsReply.map((m) => m.messageId),
     ...awaitingReply.map((m) => m.messageId),
-    ...coldExecutedRules.map((r) => r.messageId),
   ];
 
   logger.info("Getting messages", {
@@ -232,17 +212,7 @@ async function sendEmail({
     };
   });
 
-  const coldEmailers = coldExecutedRules.map((r) => {
-    const message = messageMap[r.messageId];
-    return {
-      from: message?.headers.from || "Unknown",
-      subject: decodeSnippet(message?.snippet) || "",
-      sentAt: r.createdAt,
-    };
-  });
-
   const shouldSendEmail = !!(
-    coldEmailers.length ||
     typeCounts[ThreadTrackerType.NEEDS_REPLY] ||
     typeCounts[ThreadTrackerType.AWAITING] ||
     typeCounts[ThreadTrackerType.NEEDS_ACTION]
@@ -250,7 +220,6 @@ async function sendEmail({
 
   logger.info("Sending summary email to user", {
     shouldSendEmail,
-    coldEmailers: coldEmailers.length,
     needsReplyCount: typeCounts[ThreadTrackerType.NEEDS_REPLY],
     awaitingReplyCount: typeCounts[ThreadTrackerType.AWAITING],
     needsActionCount: typeCounts[ThreadTrackerType.NEEDS_ACTION],

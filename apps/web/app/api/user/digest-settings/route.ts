@@ -15,7 +15,6 @@ const SUPPORTED_SYSTEM_TYPES = [
   SystemType.CALENDAR,
   SystemType.RECEIPT,
   SystemType.NOTIFICATION,
-  SystemType.COLD_EMAIL,
 ] as const;
 
 export type GetDigestSettingsResponse = Awaited<
@@ -63,7 +62,6 @@ async function getDigestSettings({
       calendar: false,
       receipt: false,
       notification: false,
-      coldEmail: false,
     };
   }
 
@@ -78,11 +76,12 @@ async function getDigestSettings({
     calendar: false,
     receipt: false,
     notification: false,
-    coldEmail: false,
   };
 
   // Map system types to digest settings
-  const systemTypeToKey: Record<SystemType, keyof typeof digestSettings> = {
+  const systemTypeToKey: Partial<
+    Record<SystemType, keyof typeof digestSettings>
+  > = {
     [SystemType.TO_REPLY]: "toReply",
     [SystemType.AWAITING_REPLY]: "awaitingReply",
     [SystemType.FYI]: "fyi",
@@ -92,7 +91,6 @@ async function getDigestSettings({
     [SystemType.CALENDAR]: "calendar",
     [SystemType.RECEIPT]: "receipt",
     [SystemType.NOTIFICATION]: "notification",
-    [SystemType.COLD_EMAIL]: "coldEmail",
   };
 
   // Verify all supported system types are mapped
@@ -107,7 +105,7 @@ async function getDigestSettings({
   emailAccount.rules.forEach((rule) => {
     if (rule.systemType && rule.systemType in systemTypeToKey) {
       const key = systemTypeToKey[rule.systemType];
-      digestSettings[key] = rule.actions.length > 0;
+      if (key) digestSettings[key] = rule.actions.length > 0;
     }
   });
 

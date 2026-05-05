@@ -42,11 +42,6 @@ vi.mock("@/utils/gmail/thread", () => ({
     },
   ]),
 }));
-vi.mock("@/utils/cold-email/is-cold-email", () => ({
-  runColdEmailBlocker: vi
-    .fn()
-    .mockResolvedValue({ isColdEmail: false, reason: "hasPreviousEmail" }),
-}));
 vi.mock("@/utils/categorize/senders/categorize", () => ({
   categorizeSender: vi.fn(),
 }));

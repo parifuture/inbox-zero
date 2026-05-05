@@ -5,7 +5,7 @@ import DigestEmail, {
 } from "@inboxzero/resend/emails/digest";
 import { digestPreviewBody } from "@/app/api/digest-preview/validation";
 
-// http://localhost:3000/api/digest-preview?categories=["Newsletter","Receipt","Marketing","Cold Emails"]
+// http://localhost:3000/api/digest-preview?categories=["Newsletter","Receipt","Marketing"]
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -110,48 +110,31 @@ function createMockDigestData(categories: string[]): DigestEmailProps {
         content: "Received: Yesterday, 4:30 PM • Due: Today",
       },
     ],
-    coldEmail: [
-      {
-        from: "David Williams",
-        subject: "Partnership opportunity for your business",
-        content: "Growth Solutions Inc.",
-      },
-      {
-        from: "Jennifer Lee",
-        subject: "Request for a quick call this week",
-        content: "Venture Capital Partners",
-      },
-    ],
   };
 
   for (const category of categories) {
-    // Handle special case for Cold Emails
-    if (category === "Cold Emails") {
-      digestData.coldEmail = mockDataTemplates.coldEmail;
-    } else {
-      // Try to map rule name to a mock data category
-      const mappedCategory = mapRuleNameToCategory(category);
+    // Try to map rule name to a mock data category
+    const mappedCategory = mapRuleNameToCategory(category);
 
-      if (mockDataTemplates[mappedCategory as keyof typeof mockDataTemplates]) {
-        digestData[mappedCategory] =
-          mockDataTemplates[mappedCategory as keyof typeof mockDataTemplates];
-      } else {
-        // For custom rules, show generic rule-matched content
-        digestData[category] = [
-          {
-            from: "Example Sender",
-            subject: `Email matched by "${category}" rule`,
-            content:
-              "This is an example of content that would be captured by this rule.",
-          },
-          {
-            from: "Another Sender",
-            subject: `Another email for "${category}"`,
-            content:
-              "This shows what a second email matching this rule might look like.",
-          },
-        ];
-      }
+    if (mockDataTemplates[mappedCategory as keyof typeof mockDataTemplates]) {
+      digestData[mappedCategory] =
+        mockDataTemplates[mappedCategory as keyof typeof mockDataTemplates];
+    } else {
+      // For custom rules, show generic rule-matched content
+      digestData[category] = [
+        {
+          from: "Example Sender",
+          subject: `Email matched by "${category}" rule`,
+          content:
+            "This is an example of content that would be captured by this rule.",
+        },
+        {
+          from: "Another Sender",
+          subject: `Another email for "${category}"`,
+          content:
+            "This shows what a second email matching this rule might look like.",
+        },
+      ];
     }
   }
 

@@ -14,9 +14,6 @@ import { filterNullProperties } from "@/utils";
 import { labelMessageAndSync } from "@/utils/label.server";
 import { hasVariables } from "@/utils/template";
 import prisma from "@/utils/prisma";
-import { sendColdEmailNotification } from "@/utils/cold-email/send-notification";
-import { extractEmailAddress } from "@/utils/email";
-import { captureException } from "@/utils/error";
 import { env } from "@/env";
 import { ensureEmailSendingEnabled } from "@/utils/mail";
 import { resolveActionAttachments } from "@/utils/ai/action-attachments";
@@ -522,48 +519,15 @@ const move_folder: ActionFunction<{
 };
 
 const notify_sender: ActionFunction<Record<string, unknown>> = async ({
-  email,
-  emailAccount,
   logger,
+  emailAccount,
 }) => {
-  const senderEmail = extractEmailAddress(email.headers.from);
-  if (!senderEmail) {
-    logger.error("Could not extract sender email for notify_sender action");
-    return { success: false, errorCode: "MISSING_SENDER_EMAIL" };
-  }
-
-  const result = await sendColdEmailNotification({
-    senderEmail,
-    recipientEmail: emailAccount.email,
-    originalSubject: email.headers.subject,
-    originalMessageId: email.headers["message-id"],
-    logger,
+  // EL-361b: Cold Email Blocker stripped. NOTIFY_SENDER action is retained in
+  // the ActionType enum but is now a no-op; historical rules that included it
+  // should be migrated or removed.
+  logger.warn("notify_sender action is no longer supported and is a no-op", {
+    emailAccountId: emailAccount.id,
   });
-
-  if (!result.success) {
-    const errorCode =
-      result.error === "Resend not configured"
-        ? "RESEND_NOT_CONFIGURED"
-        : "SEND_FAILED";
-
-    // Best-effort: don't fail the whole rule run if notification can't be sent.
-    logger.error("Cold email notification failed", {
-      error: result.error,
-      errorCode,
-    });
-    logger.trace("Cold email notification failed sender", { senderEmail });
-
-    captureException(
-      new Error(result.error ?? "Cold email notification failed"),
-      {
-        emailAccountId: emailAccount.id,
-        extra: { actionType: ActionType.NOTIFY_SENDER },
-        sampleRate: 0.01,
-      },
-    );
-    return { success: false, errorCode };
-  }
-
   return { success: true };
 };
 

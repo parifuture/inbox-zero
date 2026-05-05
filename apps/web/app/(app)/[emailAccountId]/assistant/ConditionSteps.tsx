@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { FormControl, FormItem } from "@/components/ui/form";
 import { RuleStep } from "@/app/(app)/[emailAccountId]/assistant/RuleStep";
-import { SystemType } from "@/generated/prisma/enums";
+import type { SystemType } from "@/generated/prisma/enums";
 import TextareaAutosize from "react-textarea-autosize";
 import { RuleSteps } from "@/app/(app)/[emailAccountId]/assistant/RuleSteps";
 import { TooltipExplanation } from "@/components/TooltipExplanation";
@@ -55,14 +55,11 @@ function getUIConditionType(
   if (condition.subject !== null) return "subject";
   if (condition.body !== null) return "subject"; // body maps to subject in UI
   // Return undefined if no field is populated (new/unselected condition)
-  return undefined;
+  return;
 }
 
 function allowMultipleConditions(systemType: SystemType | null | undefined) {
-  return (
-    systemType !== SystemType.COLD_EMAIL &&
-    !isConversationStatusType(systemType)
-  );
+  return !isConversationStatusType(systemType);
 }
 
 // Convert UI type to backend condition

@@ -1,4 +1,3 @@
-import { DEFAULT_COLD_EMAIL_PROMPT } from "@/utils/cold-email/prompt";
 import { isMicrosoftProvider } from "@/utils/email/provider-types";
 import { ActionType, SystemType } from "@/generated/prisma/enums";
 import { env } from "@/env";
@@ -110,15 +109,16 @@ const ruleConfig: Record<
     shouldLearn: true,
   },
   [SystemType.COLD_EMAIL]: {
+    // EL-361b: Cold Email Blocker stripped. Retained for enum completeness; not
+    // surfaced in onboarding/category picker anymore.
     name: "Cold Email",
-    instructions: DEFAULT_COLD_EMAIL_PROMPT,
+    instructions: "",
     label: "Cold Email",
     runOnThreads: false,
-    categoryAction: "label_archive",
+    categoryAction: "label",
     categoryActionMicrosoft: "move_folder",
-    tooltipText:
-      "Unsolicited sales pitches and cold emails. We'll never block someone that's emailed you before",
-    shouldLearn: true,
+    tooltipText: "Deprecated — cold email blocker removed.",
+    shouldLearn: false,
   },
 };
 
@@ -167,7 +167,6 @@ export const SYSTEM_RULE_ORDER: SystemType[] = [
   SystemType.CALENDAR,
   SystemType.RECEIPT,
   SystemType.NOTIFICATION,
-  SystemType.COLD_EMAIL,
 ];
 
 export function getDefaultActions(
@@ -318,7 +317,7 @@ type ActionTypeConfig = {
 
 export function getActionTypesForCategoryAction({
   categoryAction,
-  systemType,
+  systemType: _systemType,
   draftReply = false,
   hasDigest = false,
 }: {
@@ -337,13 +336,6 @@ export function getActionTypesForCategoryAction({
 
   if (categoryAction === "label_archive") {
     actionTypes.push({ type: ActionType.ARCHIVE });
-
-    if (
-      systemType === SystemType.COLD_EMAIL &&
-      env.NEXT_PUBLIC_IS_RESEND_CONFIGURED
-    ) {
-      actionTypes.push({ type: ActionType.NOTIFY_SENDER });
-    }
   }
 
   if (draftReply && !env.NEXT_PUBLIC_AUTO_DRAFT_DISABLED) {

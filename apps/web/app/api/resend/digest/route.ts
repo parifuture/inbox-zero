@@ -15,9 +15,8 @@ import {
   storedDigestContentSchema,
   type Digest,
 } from "./validation";
-import { DigestStatus, SystemType } from "@/generated/prisma/enums";
+import { DigestStatus } from "@/generated/prisma/enums";
 import { extractNameFromEmail } from "../../../../utils/email";
-import { getRuleName } from "@/utils/rule/consts";
 import { camelCase } from "lodash";
 import { createEmailProvider } from "@/utils/email/provider";
 import { sleep } from "@/utils/sleep";
@@ -262,9 +261,7 @@ async function sendEmail({
           return;
         }
 
-        const ruleName =
-          item.action?.executedRule?.rule?.name ||
-          getRuleName(SystemType.COLD_EMAIL);
+        const ruleName = item.action?.executedRule?.rule?.name || "Other";
 
         const ruleNameKey = camelCase(ruleName);
         if (!ruleNameMap.has(ruleNameKey)) {
