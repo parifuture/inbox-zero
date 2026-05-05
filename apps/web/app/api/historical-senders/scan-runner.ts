@@ -2,6 +2,7 @@ import type { gmail_v1 } from "@googleapis/gmail";
 import prisma from "@/utils/prisma";
 import { getMessagesBatch } from "@/utils/gmail/message";
 import { getAccessTokenFromClient } from "@/utils/gmail/client";
+import { runGmailOp } from "@/utils/gmail/errors";
 import { extractEmailAddress, extractDomainFromEmail } from "@/utils/email";
 import { createScopedLogger } from "@/utils/logger";
 
@@ -124,12 +125,20 @@ export async function scanHistoricalSenders({
 
   try {
     do {
-      const listResp = await gmail.users.messages.list({
-        userId: "me",
-        q: query,
-        maxResults: PAGE_SIZE,
-        pageToken,
-      });
+      const listResp = await runGmailOp(
+        () =>
+          gmail.users.messages.list({
+            userId: "me",
+            q: query,
+            maxResults: PAGE_SIZE,
+            pageToken,
+          }),
+        {
+          op: "messages_list_scan",
+          targetId: `scan:${emailAccountId}:page:${pageCount + 1}`,
+          logger: log,
+        },
+      );
 
       const messages = listResp.data.messages || [];
       pageToken = listResp.data.nextPageToken || undefined;

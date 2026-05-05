@@ -6,7 +6,7 @@ import { isGoogleProvider } from "@/utils/email/provider-types";
 import { getGmailClientForEmail } from "@/utils/email-account-client";
 import { getMessages } from "@/utils/gmail/message";
 import { GmailLabel } from "@/utils/gmail/label";
-import { withGmailRetry } from "@/utils/gmail/retry";
+import { runGmailOp } from "@/utils/gmail/errors";
 import { buildArchiveQuery } from "@/app/api/historical-senders/scan-runner";
 import prisma from "@/utils/prisma";
 
@@ -53,14 +53,20 @@ export const POST = withEmailProvider(
         const ids = messages.map((m) => m.id).filter(Boolean);
         if (ids.length > 0) {
           for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
-            await withGmailRetry(() =>
-              gmail.users.messages.batchModify({
-                userId: "me",
-                requestBody: {
-                  ids: slice,
-                  removeLabelIds: [GmailLabel.INBOX],
-                },
-              }),
+            await runGmailOp(
+              () =>
+                gmail.users.messages.batchModify({
+                  userId: "me",
+                  requestBody: {
+                    ids: slice,
+                    removeLabelIds: [GmailLabel.INBOX],
+                  },
+                }),
+              {
+                op: "batch_archive",
+                targetId: `sender:${senderEmail}:${slice.length}`,
+                downgradeNotFound: true,
+              },
             );
             archivedCount += slice.length;
           }
