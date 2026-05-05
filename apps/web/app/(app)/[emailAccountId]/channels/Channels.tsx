@@ -47,7 +47,6 @@ import {
 import { useAccount } from "@/providers/EmailAccountProvider";
 import { useMessagingChannels } from "@/hooks/useMessagingChannels";
 import { useRules } from "@/hooks/useRules";
-import { useSlackConnect } from "@/hooks/useSlackConnect";
 import {
   updateMessagingFeatureRouteAction,
   toggleRuleChannelAction,
@@ -422,15 +421,13 @@ function ConnectedChannelSection({
 function UnconnectedProviderSection({
   provider,
   emailAccountId,
-  onConnected,
+  onConnected: _onConnected,
 }: {
   provider: MessagingProvider;
   emailAccountId: string;
   onConnected: () => void;
 }) {
   const config = PROVIDER_CONFIG[provider];
-  const { connect: connectSlack, connecting: connectingSlack } =
-    useSlackConnect({ emailAccountId, onConnected });
 
   const [linkCodeDialog, setLinkCodeDialog] = useState<{
     provider: LinkableProvider;
@@ -459,14 +456,18 @@ function UnconnectedProviderSection({
   );
 
   const handleConnect = () => {
-    if (provider === "SLACK") {
-      connectSlack();
-    } else {
-      executeCreateLinkCode({ provider });
-    }
+    // Slack OAuth connect removed in EL-360a. For SLACK this button is hidden;
+    // TEAMS / TELEGRAM still use the link-code flow.
+    if (provider === "SLACK") return;
+    executeCreateLinkCode({ provider });
   };
 
-  const isLoading = connectingSlack || linkCodeStatus === "executing";
+  // Skip rendering the connect card for Slack entirely — OAuth plumbing was
+  // removed in EL-360a; existing Slack channels keep working via the rest of
+  // the UI, but new Slack connections are no longer supported here.
+  if (provider === "SLACK") return null;
+
+  const isLoading = linkCodeStatus === "executing";
 
   return (
     <>
