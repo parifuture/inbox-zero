@@ -26,10 +26,12 @@ import {
   PersonStandingIcon,
   RatioIcon,
   SendIcon,
+  ShieldCheckIcon,
   SparklesIcon,
   TagIcon,
   Users2Icon,
   UserCheckIcon,
+  WrenchIcon,
   ZapIcon,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
@@ -189,11 +191,31 @@ export const useNavigation = () => {
     [currentEmailAccountId, showMeetingBriefs, showIntegrations],
   );
 
+  // EL-383: Admin pages (parity dashboard, admin debug) are unlinked without
+  // this group. Single-user fork — server auth on /admin/* still enforces
+  // isAdmin, so rendering these links unconditionally is safe.
+  const adminItems: NavItem[] = useMemo(
+    () => [
+      {
+        name: "Parity Dashboard",
+        href: "/admin/parity",
+        icon: ShieldCheckIcon,
+      },
+      {
+        name: "Admin",
+        href: "/admin",
+        icon: WrenchIcon,
+      },
+    ],
+    [],
+  );
+
   return {
     manageItems,
     triageItems,
     cleanupItems,
     moreItems,
+    adminItems,
   };
 };
 
@@ -313,6 +335,10 @@ export function SideNav({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarGroup>
                 <SidebarGroupLabel>More</SidebarGroupLabel>
                 <SideNavMenu items={navigation.moreItems} activeHref={path} />
+              </SidebarGroup>
+              <SidebarGroup>
+                <SidebarGroupLabel>Admin</SidebarGroupLabel>
+                <SideNavMenu items={navigation.adminItems} activeHref={path} />
               </SidebarGroup>
             </>
           )}
