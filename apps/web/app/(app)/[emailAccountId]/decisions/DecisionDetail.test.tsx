@@ -70,8 +70,8 @@ vi.mock("@/components/ui/select", () => {
         onChange={(e) => onValueChange(e.target.value)}
       >
         {items.map((it) => (
-          <option key={it.props.value} value={it.props.value}>
-            {it.props.children}
+          <option key={(it.props as any).value} value={(it.props as any).value}>
+            {(it.props as any).children}
           </option>
         ))}
       </select>

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import {
   MessageCircleIcon,
   MessageSquareIcon,
@@ -34,17 +33,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { toastSuccess, toastError, toastInfo } from "@/components/Toast";
+import { toastSuccess, toastError } from "@/components/Toast";
 import { useMessagingChannels } from "@/hooks/useMessagingChannels";
 import {
   createMessagingLinkCodeAction,
   disconnectChannelAction,
-  linkSlackWorkspaceAction,
 } from "@/utils/actions/messaging-channels";
-import { fetchWithAccount } from "@/utils/fetch";
-import { captureException } from "@/utils/error";
 import { getActionErrorMessage } from "@/utils/error";
-import type { GetSlackAuthUrlResponse } from "@/app/api/slack/auth-url/route";
 import {
   type MessagingProvider,
   MessagingRoutePurpose,
@@ -71,12 +66,6 @@ export function ConnectedAppsSection({
     error,
     mutate: mutateChannels,
   } = useMessagingChannels(emailAccountId);
-  const [connectingSlack, setConnectingSlack] = useState(false);
-  const [existingWorkspace, setExistingWorkspace] = useState<{
-    teamId: string;
-    teamName: string;
-  } | null>(null);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
   const [linkCodeDialog, setLinkCodeDialog] = useState<{
     provider: LinkableMessagingProvider;
     code: string;
@@ -85,45 +74,16 @@ export function ConnectedAppsSection({
 
   const connectedChannels =
     channelsData?.channels.filter((channel) => channel.isConnected) ?? [];
-  const hasSlack = connectedChannels.some(
-    (channel) => channel.provider === "SLACK",
-  );
   const hasTeams = connectedChannels.some(
     (channel) => channel.provider === "TEAMS",
   );
   const hasTelegram = connectedChannels.some(
     (channel) => channel.provider === "TELEGRAM",
   );
-  const slackAvailable =
-    channelsData?.availableProviders?.includes("SLACK") ?? false;
   const teamsAvailable =
     channelsData?.availableProviders?.includes("TEAMS") ?? false;
   const telegramAvailable =
     channelsData?.availableProviders?.includes("TELEGRAM") ?? false;
-
-  const { execute: executeLinkSlack, status: linkStatus } = useAction(
-    linkSlackWorkspaceAction.bind(null, emailAccountId),
-    {
-      onSuccess: () => {
-        toastSuccess({ description: "Slack connected" });
-        setExistingWorkspace(null);
-        setAuthUrl(null);
-        mutateChannels();
-      },
-      onError: (error) => {
-        const msg = getActionErrorMessage(error.error);
-        if (msg?.includes("Could not find your Slack account") && authUrl) {
-          toastInfo({
-            title: "Email not found in Slack",
-            description: "Redirecting to Slack authorization...",
-          });
-          window.location.href = authUrl;
-        } else {
-          toastError({ description: msg ?? "Failed to link Slack" });
-        }
-      },
-    },
-  );
 
   const { execute: executeCreateLinkCode, status: linkCodeStatus } = useAction(
     createMessagingLinkCodeAction.bind(null, emailAccountId),
@@ -147,50 +107,11 @@ export function ConnectedAppsSection({
 
   if (
     !isLoading &&
-    !slackAvailable &&
     !teamsAvailable &&
     !telegramAvailable &&
     connectedChannels.length === 0
   )
     return null;
-
-  const handleConnectSlack = async () => {
-    setConnectingSlack(true);
-    try {
-      const res = await fetchWithAccount({
-        url: "/api/slack/auth-url",
-        emailAccountId,
-      });
-      if (!res.ok) {
-        throw new Error("Failed to get Slack auth URL");
-      }
-      const data: GetSlackAuthUrlResponse = await res.json();
-
-      if (data.existingWorkspace) {
-        setExistingWorkspace(data.existingWorkspace);
-        setAuthUrl(data.url);
-        setConnectingSlack(false);
-        return;
-      }
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error("No auth URL returned");
-      }
-    } catch (error) {
-      captureException(error, {
-        extra: { context: "Slack OAuth initiation" },
-      });
-      toastError({ description: "Failed to connect Slack" });
-      setConnectingSlack(false);
-    }
-  };
-
-  const handleLinkSlack = () => {
-    if (!existingWorkspace) return;
-    executeLinkSlack({ teamId: existingWorkspace.teamId });
-  };
 
   const handleCreateLinkCode = (provider: LinkableMessagingProvider) => {
     executeCreateLinkCode({ provider });
@@ -205,43 +126,6 @@ export function ConnectedAppsSection({
         </ItemContent>
         <ItemActions>
           <div className="flex items-center gap-2">
-            {!hasSlack &&
-              slackAvailable &&
-              (existingWorkspace ? (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={linkStatus === "executing"}
-                    onClick={handleLinkSlack}
-                  >
-                    <MessagesSquareIcon className="mr-2 h-4 w-4" />
-                    {linkStatus === "executing"
-                      ? "Linking..."
-                      : `Link to ${existingWorkspace.teamName}`}
-                  </Button>
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground underline underline-offset-4"
-                    onClick={() => {
-                      if (authUrl) window.location.href = authUrl;
-                    }}
-                  >
-                    Install manually
-                  </button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={connectingSlack || isLoading}
-                  onClick={handleConnectSlack}
-                >
-                  <MessagesSquareIcon className="mr-2 h-4 w-4" />
-                  {connectingSlack ? "Connecting..." : "Connect Slack"}
-                </Button>
-              ))}
-
             {!hasTeams && teamsAvailable && (
               <Button
                 variant="outline"
@@ -438,122 +322,11 @@ function getProviderDisplayName(provider: LinkableMessagingProvider): string {
   return "Telegram";
 }
 
-export function useSlackNotifications({
-  enabled,
-  onSlackConnected,
-}: {
+export function useSlackNotifications(_args: {
   enabled: boolean;
   onSlackConnected?: (emailAccountId: string | null) => void;
 }) {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
-  const handled = useRef(false);
-
-  useEffect(() => {
-    if (!enabled) return;
-    if (handled.current) return;
-
-    const message = searchParams.get("message");
-    const error = searchParams.get("error");
-    const errorReason = searchParams.get("error_reason");
-    const errorDetail = searchParams.get("error_detail");
-    const resolvedReason = resolveSlackErrorReason(errorReason, errorDetail);
-
-    if (!message && !error && !errorReason && !errorDetail) return;
-
-    handled.current = true;
-
-    if (message === "slack_connected") {
-      onSlackConnected?.(searchParams.get("slack_email_account_id"));
-      toastSuccess({
-        title: "Slack connected",
-        description:
-          "Next, choose a private channel in Connected Apps for meeting brief and attachment notifications.",
-      });
-    }
-    if (message === "processing") {
-      toastInfo({
-        title: "Slack connection in progress",
-        description:
-          "Slack is still finalizing your connection. Please refresh in a moment.",
-      });
-    }
-
-    if (error === "connection_failed" || errorDetail) {
-      toastError({
-        title: "Slack connection failed",
-        description: getSlackConnectionFailedDescription(resolvedReason),
-      });
-    }
-
-    const preserved = new URLSearchParams();
-    for (const [key, value] of searchParams.entries()) {
-      if (
-        key !== "message" &&
-        key !== "error" &&
-        key !== "error_reason" &&
-        key !== "error_detail" &&
-        key !== "slack_email_account_id"
-      ) {
-        preserved.set(key, value);
-      }
-    }
-    const qs = preserved.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
-  }, [enabled, onSlackConnected, pathname, router, searchParams]);
-}
-
-function getSlackConnectionFailedDescription(
-  errorReason: string | null,
-): string {
-  if (errorReason === "oauth_invalid_team_for_non_distributed_app") {
-    return "This Slack app is not distributed to every workspace yet. Use the currently supported workspace or contact support.";
-  }
-
-  if (errorReason === "oauth_invalid_code") {
-    return "Slack returned an invalid or expired code. Please try connecting again.";
-  }
-
-  if (
-    errorReason === "missing_code" ||
-    errorReason === "missing_state" ||
-    errorReason === "invalid_state" ||
-    errorReason === "invalid_state_format"
-  ) {
-    return "Slack session validation failed. Please try connecting again.";
-  }
-
-  return "We couldn't complete the Slack connection. Please try again.";
-}
-
-function resolveSlackErrorReason(
-  errorReason: string | null,
-  errorDetail: string | null,
-): string | null {
-  if (errorReason) return errorReason;
-  if (!errorDetail) return null;
-
-  const normalized = errorDetail.toLowerCase();
-
-  if (normalized.includes("invalid_code")) {
-    return "oauth_invalid_code";
-  }
-  if (normalized.includes("invalid_team_for_non_distributed_app")) {
-    return "oauth_invalid_team_for_non_distributed_app";
-  }
-  if (normalized.includes("invalid_state_format")) {
-    return "invalid_state_format";
-  }
-  if (normalized.includes("invalid_state")) {
-    return "invalid_state";
-  }
-  if (normalized.includes("missing_state")) {
-    return "missing_state";
-  }
-  if (normalized.includes("missing_code")) {
-    return "missing_code";
-  }
-
-  return null;
+  // Slack OAuth connect flow removed (EL-360a). This hook is now a no-op
+  // kept for backward compat with existing call sites; it previously parsed
+  // ?message=slack_connected redirects from /api/slack/callback.
 }
