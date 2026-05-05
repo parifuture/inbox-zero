@@ -30,13 +30,6 @@ vi.mock("next/server", () => ({
 vi.mock("@/utils/ai/choose-rule/ai-choose-rule", () => ({
   aiChooseRule: vi.fn(),
 }));
-vi.mock("@/utils/cold-email/cold-email-rule", () => ({
-  getColdEmailRule: vi.fn().mockResolvedValue(null),
-  isColdEmailRuleEnabled: vi.fn().mockReturnValue(false),
-}));
-vi.mock("@/utils/cold-email/is-cold-email", () => ({
-  isColdEmail: vi.fn(),
-}));
 vi.mock("@/utils/rule/classification-feedback", () => ({
   getClassificationFeedback: vi.fn().mockResolvedValue(null),
 }));

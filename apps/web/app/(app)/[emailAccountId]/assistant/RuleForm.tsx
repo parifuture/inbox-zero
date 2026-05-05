@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/Input";
 import { toastError, toastSuccess } from "@/components/Toast";
 import { TypographyH3 } from "@/components/Typography";
-import { ActionType, SystemType } from "@/generated/prisma/enums";
+import { ActionType, type SystemType } from "@/generated/prisma/enums";
 import {
   createRuleAction,
   deleteRuleAction,
@@ -663,10 +663,7 @@ function ThreadsExplanation({ size }: { size: "sm" | "md" }) {
 }
 
 function allowMultipleConditions(systemType: SystemType | null | undefined) {
-  return (
-    systemType !== SystemType.COLD_EMAIL &&
-    !isConversationStatusType(systemType)
-  );
+  return !isConversationStatusType(systemType);
 }
 
 function restorePersistedActionSequence({
@@ -724,7 +721,7 @@ export function getRuleActionTypeOptions({
   labelActionText,
   hasConnectedMessagingChannels,
   hasAvailableMessagingProviders,
-  systemType,
+  systemType: _systemType,
   existingActionTypes,
 }: {
   provider: string;
@@ -818,9 +815,7 @@ export function getRuleActionTypeOptions({
           },
         ]
       : []),
-    ...((systemType === SystemType.COLD_EMAIL &&
-      env.NEXT_PUBLIC_IS_RESEND_CONFIGURED) ||
-    existingActionTypes.includes(ActionType.NOTIFY_SENDER)
+    ...(existingActionTypes.includes(ActionType.NOTIFY_SENDER)
       ? [
           {
             label: "Notify sender",

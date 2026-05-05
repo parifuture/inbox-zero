@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { env } from "@/env";
-import { ActionType, SystemType } from "@/generated/prisma/enums";
+import { ActionType } from "@/generated/prisma/enums";
 import { getRuleActionTypeOptions } from "./RuleForm";
 
 vi.mock("server-only", () => ({}));
@@ -49,7 +49,7 @@ describe("getRuleActionTypeOptions", () => {
     ).toBe(true);
   });
 
-  it("only exposes notify sender for configured cold email rules or existing actions", () => {
+  it("only exposes notify sender when an existing action keeps it visible", () => {
     const noExistingActionOptions = getRuleActionTypeOptions({
       provider: "",
       labelActionText: "Label",
@@ -58,13 +58,13 @@ describe("getRuleActionTypeOptions", () => {
       systemType: null,
       existingActionTypes: [],
     });
-    const coldEmailOptions = getRuleActionTypeOptions({
+    const existingNotifyOptions = getRuleActionTypeOptions({
       provider: "",
       labelActionText: "Label",
       hasConnectedMessagingChannels: false,
       hasAvailableMessagingProviders: false,
-      systemType: SystemType.COLD_EMAIL,
-      existingActionTypes: [],
+      systemType: null,
+      existingActionTypes: [ActionType.NOTIFY_SENDER],
     });
 
     expect(
@@ -73,7 +73,7 @@ describe("getRuleActionTypeOptions", () => {
       ),
     ).toBe(false);
     expect(
-      coldEmailOptions.some(
+      existingNotifyOptions.some(
         (option) => option.value === ActionType.NOTIFY_SENDER,
       ),
     ).toBe(true);

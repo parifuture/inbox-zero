@@ -142,9 +142,6 @@ model EmailAccount {
   statsEmailFrequency       Frequency            @default(WEEKLY)
   summaryEmailFrequency     Frequency            @default(WEEKLY)
   lastSummaryEmailAt        DateTime?
-  coldEmailBlocker          ColdEmailSetting? // @deprecated
-  coldEmailDigest           Boolean              @default(false) // @deprecated
-  coldEmailPrompt           String? // @deprecated
   rulesPrompt               String? // @deprecated
   autoCategorizeSenders     Boolean              @default(false)
   multiRuleSelectionEnabled Boolean              @default(false)
@@ -185,7 +182,6 @@ model EmailAccount {
   rules            Rule[]
   executedRules    ExecutedRule[]
   newsletters      Newsletter[]
-  coldEmails       ColdEmail[] // @deprecated - kept for backward compatibility during migration
   groups           Group[]
   categories       Category[]
   threadTrackers   ThreadTracker[]
@@ -323,12 +319,9 @@ model DigestItem {
   digest      Digest          @relation(fields: [digestId], references: [id], onDelete: Cascade)
   actionId    String?
   action      ExecutedAction? @relation(fields: [actionId], references: [id], onDelete: Cascade)
-  coldEmailId String? // @deprecated
-  coldEmail   ColdEmail?      @relation(fields: [coldEmailId], references: [id]) // @deprecated
 
   @@unique([digestId, threadId, messageId])
   @@index([actionId])
-  @@index([coldEmailId]) // @deprecated
 }
 
 model Schedule {
@@ -785,29 +778,6 @@ model Newsletter {
   @@unique([email, emailAccountId])
   @@index([emailAccountId, status])
   @@index([categoryId])
-}
-
-// @deprecated - ColdEmail data is being migrated to GroupItem (learned patterns).
-// This model is kept for backward compatibility during the migration period.
-// Once all users have run the migration, this model can be deleted.
-model ColdEmail {
-  id        String           @id @default(cuid())
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  fromEmail String
-  messageId String?
-  threadId  String?
-  status    ColdEmailStatus?
-  reason    String?
-
-  emailAccountId String
-  emailAccount   EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
-
-  digestItems DigestItem[]
-
-  @@unique([emailAccountId, fromEmail])
-  @@index([emailAccountId, status])
-  @@index([emailAccountId, createdAt])
 }
 
 model EmailMessage {
@@ -1608,11 +1578,6 @@ model SenderDecisionJob {
   @@index([emailAccountId, status])
 }
 
-enum ColdEmailStatus {
-  AI_LABELED_COLD
-  USER_REJECTED_COLD
-}
-
 enum DocumentFilingStatus {
   PENDING // Waiting for user input
   FILED // Document is filed (auto or after user confirmation)
@@ -1624,15 +1589,6 @@ enum DocumentFilingStatus {
 enum AttachmentSourceType {
   FILE
   FOLDER
-}
-
-// @deprecated - No longer used
-enum ColdEmailSetting {
-  DISABLED
-  LIST
-  LABEL
-  ARCHIVE_AND_LABEL
-  ARCHIVE_AND_READ_AND_LABEL
 }
 
 enum PremiumTier {

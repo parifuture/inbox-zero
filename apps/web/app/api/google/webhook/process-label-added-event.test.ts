@@ -2,8 +2,6 @@ import { vi, describe, it, expect, beforeEach } from "vitest";
 import { handleLabelAddedEvent } from "./process-label-added-event";
 import type { gmail_v1 } from "@googleapis/gmail";
 import { saveLearnedPattern } from "@/utils/rule/learned-patterns";
-import { GroupItemSource } from "@/generated/prisma/enums";
-import prisma from "@/utils/prisma";
 import { createTestLogger } from "@/__tests__/helpers";
 import { saveClassificationFeedback } from "@/utils/rule/classification-feedback";
 import { fetchSenderFromMessage } from "@/app/api/google/webhook/fetch-sender-from-message";
@@ -112,29 +110,9 @@ describe("process-label-added-event", () => {
   };
 
   describe("handleLabelAddedEvent", () => {
-    it("should save cold email pattern when SPAM label is added", async () => {
-      vi.mocked(prisma.rule.findFirst).mockResolvedValue({
-        id: "rule-123",
-      } as any);
-
-      await handleLabelAddedEvent(
-        createLabelAddedItem(),
-        defaultOptions,
-        logger,
-      );
-
-      expect(saveLearnedPattern).toHaveBeenCalledWith({
-        emailAccountId: "email-account-id",
-        from: "sender@example.com",
-        ruleId: "rule-123",
-        exclude: false,
-        logger: expect.anything(),
-        messageId: "123",
-        threadId: "thread-123",
-        reason: "Marked as spam by user",
-        source: GroupItemSource.LABEL_ADDED,
-      });
-    });
+    // EL-361b: Cold Email Blocker stripped — SPAM → cold-email learning tests
+    // removed. Remaining tests cover the classification-feedback path for
+    // non-system labels.
 
     it("should skip when added label is a system label", async () => {
       await handleLabelAddedEvent(
@@ -158,92 +136,16 @@ describe("process-label-added-event", () => {
       expect(saveClassificationFeedback).not.toHaveBeenCalled();
     });
 
-    it("should skip when no Cold Email rule exists", async () => {
-      vi.mocked(prisma.rule.findFirst).mockResolvedValue(null);
-
-      await handleLabelAddedEvent(
-        createLabelAddedItem(),
-        defaultOptions,
-        logger,
-      );
-
-      expect(saveLearnedPattern).not.toHaveBeenCalled();
-    });
-
-    it("should skip when messageId is missing", async () => {
-      const item = {
-        message: { threadId: "thread-123" },
-        labelIds: ["SPAM"],
-      } as gmail_v1.Schema$HistoryLabelAdded;
-
-      await handleLabelAddedEvent(item, defaultOptions, logger);
-
-      expect(mockProvider.getMessage).not.toHaveBeenCalled();
-      expect(saveLearnedPattern).not.toHaveBeenCalled();
-    });
-
-    it("should skip when threadId is missing", async () => {
-      const item = {
-        message: { id: "123" },
-        labelIds: ["SPAM"],
-      } as gmail_v1.Schema$HistoryLabelAdded;
-
-      await handleLabelAddedEvent(item, defaultOptions, logger);
-
-      expect(mockProvider.getMessage).not.toHaveBeenCalled();
-      expect(saveLearnedPattern).not.toHaveBeenCalled();
-    });
-
     it("should skip when sender cannot be extracted", async () => {
       vi.mocked(fetchSenderFromMessage).mockResolvedValueOnce(null);
 
       await handleLabelAddedEvent(
-        createLabelAddedItem(),
+        createLabelAddedItem("123", "thread-123", ["label-1"]),
         defaultOptions,
         logger,
       );
 
       expect(saveLearnedPattern).not.toHaveBeenCalled();
-    });
-
-    it("should skip when sender already exists in cold email group", async () => {
-      vi.mocked(prisma.rule.findFirst).mockResolvedValue({
-        id: "rule-123",
-        groupId: "group-123",
-      } as any);
-      vi.mocked(prisma.groupItem.findUnique).mockResolvedValue({
-        id: "existing-item",
-      } as any);
-
-      await handleLabelAddedEvent(
-        createLabelAddedItem(),
-        defaultOptions,
-        logger,
-      );
-
-      expect(saveLearnedPattern).not.toHaveBeenCalled();
-    });
-
-    it("should save pattern when group exists but sender is new", async () => {
-      vi.mocked(prisma.rule.findFirst).mockResolvedValue({
-        id: "rule-123",
-        groupId: "group-123",
-      } as any);
-      vi.mocked(prisma.groupItem.findUnique).mockResolvedValue(null);
-
-      await handleLabelAddedEvent(
-        createLabelAddedItem(),
-        defaultOptions,
-        logger,
-      );
-
-      expect(saveLearnedPattern).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ruleId: "rule-123",
-          exclude: false,
-          source: GroupItemSource.LABEL_ADDED,
-        }),
-      );
     });
   });
 });

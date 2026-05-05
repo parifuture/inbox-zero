@@ -35,11 +35,6 @@ import {
 } from "@/utils/rule/email-from-pattern";
 import type { EmailProvider } from "@/utils/email/types";
 import type { ModelType } from "@/utils/llms/model";
-import {
-  getColdEmailRule,
-  isColdEmailRuleEnabled,
-} from "@/utils/cold-email/cold-email-rule";
-import { isColdEmail } from "@/utils/cold-email/is-cold-email";
 import { isConversationStatusType } from "@/utils/reply-tracker/conversation-status-config";
 import { getClassificationFeedback } from "@/utils/rule/classification-feedback";
 import {
@@ -76,46 +71,15 @@ export async function findMatchingRules({
   logger: Logger;
 }): Promise<MatchingRulesResult> {
   const logger = log.with({ module: MODULE });
-  const coldEmailRule = await getColdEmailRule(emailAccount.id);
 
-  if (coldEmailRule && isColdEmailRuleEnabled(coldEmailRule)) {
-    const coldEmailResult = await isColdEmail({
-      email: getEmailForLLM(message),
-      emailAccount,
-      provider,
-      modelType,
-      coldEmailRule,
-    });
-
-    if (coldEmailResult.isColdEmail) {
-      const coldRule = await prisma.rule.findUniqueOrThrow({
-        where: { id: coldEmailRule.id },
-        include: {
-          actions: true,
-        },
-      });
-
-      return {
-        matches: [
-          {
-            rule: coldRule,
-            matchReasons: [{ type: ConditionType.AI }],
-          },
-        ],
-        reasoning: coldEmailResult.aiReason || coldEmailResult.reason,
-        selectionMetadata: createRuleSelectionMetadata({
-          isThread: provider.isReplyInThread(message),
-        }),
-      };
-    }
-  }
-
-  // Filter out cold email rule which was already checked above
+  // EL-361b: Cold Email Blocker stripped — the sidecar-replacement parity
+  // classifier (EL-358) now handles bulk-mail triage. No pre-check here;
+  // any stray COLD_EMAIL rules were deleted in migration 20260504180000.
   const rulesWithoutColdEmail = rules.filter(
     (rule) => rule.systemType !== SystemType.COLD_EMAIL,
   );
 
-  const results = await findMatchingRulesWithReasons(
+  return findMatchingRulesWithReasons(
     rulesWithoutColdEmail,
     message,
     emailAccount,
@@ -123,8 +87,6 @@ export async function findMatchingRules({
     modelType,
     logger,
   );
-
-  return results;
 }
 
 /**

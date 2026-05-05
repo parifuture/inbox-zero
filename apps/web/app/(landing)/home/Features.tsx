@@ -6,15 +6,12 @@ import {
   type LucideIcon,
   MousePointer2Icon,
   Orbit,
-  ShieldHalfIcon,
   Sparkles,
   SparklesIcon,
-  TagIcon,
   BellIcon,
   ReplyIcon,
 } from "lucide-react";
 import Image from "next/image";
-import { BRAND_NAME } from "@/utils/branding";
 
 type Side = "left" | "right";
 
@@ -24,7 +21,6 @@ export function FeaturesHome() {
       <FeaturesAiAssistant />
       <FeaturesReplyZero imageSide="right" />
       <FeaturesUnsubscribe />
-      <FeaturesColdEmailBlocker imageSide="right" />
       <FeaturesStats />
     </>
   );
@@ -145,44 +141,6 @@ export function FeaturesAiAssistant({ imageSide }: { imageSide?: Side }) {
       features={[]}
       image="/images/home/ai-email-assistant.png"
       imageAlt="AI email assistant organizing an inbox with labels"
-    />
-  );
-}
-
-const featuresColdEmailBlocker = [
-  {
-    name: "Block out the noise",
-    description:
-      "Automatically archive or label cold emails. Keep your inbox clean and focused on what matters.",
-    icon: ShieldHalfIcon,
-  },
-  {
-    name: "Adjust cold email prompt",
-    description: `Tell ${BRAND_NAME} what constitutes a cold email for you. It will block them based on your instructions.`,
-    icon: SparklesIcon,
-  },
-  {
-    name: "Label cold emails",
-    description:
-      "Automatically label cold emails so you can review them later. Keep your inbox clean and focused on what matters.",
-    icon: TagIcon,
-  },
-];
-
-export function FeaturesColdEmailBlocker({ imageSide }: { imageSide?: Side }) {
-  const subtitle = "Never read a cold email again";
-  const description =
-    "Say goodbye to unsolicited outreach. Automatically filter sales pitches and cold emails so you only see messages that matter.";
-
-  return (
-    <FeaturesWithImage
-      imageSide={imageSide}
-      title="Cold Email Blocker"
-      subtitle={subtitle}
-      description={description}
-      image="/images/home/cold-email-blocker.png"
-      imageAlt="Cold email blocker filtering unwanted emails"
-      features={featuresColdEmailBlocker}
     />
   );
 }

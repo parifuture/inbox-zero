@@ -3,7 +3,6 @@ import type { ParsedMessage, RuleWithActions } from "@/utils/types";
 import {
   ActionType,
   ExecutedRuleStatus,
-  GroupItemSource,
   SystemType,
 } from "@/generated/prisma/enums";
 import type { Prisma, Rule } from "@/generated/prisma/client";
@@ -42,7 +41,6 @@ import {
   updateThreadTrackers,
 } from "@/utils/reply-tracker/handle-conversation-status";
 import { removeConflictingThreadStatusLabels } from "@/utils/reply-tracker/label-helpers";
-import { saveLearnedPattern } from "@/utils/rule/learned-patterns";
 import { internalDateToDate } from "@/utils/date";
 import { ConditionType } from "@/utils/config";
 import type { Logger } from "@/utils/logger";
@@ -469,18 +467,9 @@ async function executeMatchedRule(
   );
 
   if (rule.systemType === SystemType.COLD_EMAIL) {
-    const from =
-      extractEmailAddress(message.headers.from) || message.headers.from;
-    await saveLearnedPattern({
-      emailAccountId: emailAccount.id,
-      from,
-      ruleId: rule.id,
-      logger,
-      reason,
-      messageId: message.id,
-      threadId: message.threadId,
-      source: GroupItemSource.AI,
-    });
+    // EL-361b: Cold Email Blocker is stripped. Any rules of this type were
+    // deleted by the migration, so this branch is unreachable; kept as a
+    // safety no-op until the enum value itself is retired.
   }
 
   if (isConversationStatusType(rule.systemType)) {
@@ -626,10 +615,7 @@ function shouldAnalyzeSenderPattern({
   if (!result.rule) return false;
   if (isConversationStatusType(result.rule.systemType)) return false;
 
-  // Cold email blocker has its own AI analysis and stores senders in ColdEmail table
-  // No need for learned pattern analysis
-  if (result.rule.systemType === SystemType.COLD_EMAIL) return false;
-
+  // EL-361b: Cold Email blocker stripped — no learned-pattern skip needed.
   // skip if we already matched for static reasons
   // learnings only needed for rules that would run through an ai
   if (

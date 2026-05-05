@@ -64,11 +64,6 @@ export function DigestItemsForm({
         }
       });
 
-      // Add cold email if enabled
-      if (digestSettings.coldEmail) {
-        selectedItems.add("cold-emails");
-      }
-
       setSelectedDigestItems(selectedItems);
     }
   }, [rules, digestSettings]);
@@ -85,9 +80,7 @@ export function DigestItemsForm({
 
       // Then set selected rules to true
       selectedDigestItems.forEach((itemId) => {
-        if (itemId !== "cold-emails") {
-          ruleDigestPreferences[itemId] = true;
-        }
+        ruleDigestPreferences[itemId] = true;
       });
 
       const result = await updateDigestItemsAction(emailAccountId, {

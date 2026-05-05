@@ -76,7 +76,7 @@ describe("learnFromOutlookLabelRemoval", () => {
       {
         rule: {
           id: "rule-1",
-          systemType: SystemType.COLD_EMAIL,
+          systemType: SystemType.NOTIFICATION,
         },
         actionItems: [
           {
@@ -119,7 +119,7 @@ describe("learnFromOutlookLabelRemoval", () => {
       {
         rule: {
           id: "rule-1",
-          systemType: SystemType.COLD_EMAIL,
+          systemType: SystemType.NOTIFICATION,
         },
         actionItems: [
           {

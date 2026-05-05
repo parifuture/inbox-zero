@@ -162,11 +162,6 @@ export function DigestSettingsForm({
         }
       });
 
-      // Add cold email if enabled
-      if (digestSettings.coldEmail) {
-        selectedItems.add("cold-emails");
-      }
-
       setSelectedDigestItems(selectedItems);
 
       // Initialize schedule form data
@@ -195,9 +190,7 @@ export function DigestSettingsForm({
 
       // Then set selected rules to true
       data.selectedItems.forEach((itemId) => {
-        if (itemId !== "cold-emails") {
-          ruleDigestPreferences[itemId] = true;
-        }
+        ruleDigestPreferences[itemId] = true;
       });
 
       // Handle schedule update
@@ -254,10 +247,6 @@ export function DigestSettingsForm({
       label: rule.name,
       value: rule.id,
     })) || []),
-    {
-      label: "Cold Emails",
-      value: "cold-emails",
-    },
   ];
 
   return (
@@ -418,10 +407,9 @@ function EmailPreview({
 }) {
   const { data: rules } = useRules();
 
-  const selectedDigestNames = Array.from(selectedDigestItems).map((itemId) => {
-    if (itemId === "cold-emails") return "Cold Emails";
-    return rules?.find((rule) => rule.id === itemId)?.name || itemId;
-  });
+  const selectedDigestNames = Array.from(selectedDigestItems).map(
+    (itemId) => rules?.find((rule) => rule.id === itemId)?.name || itemId,
+  );
 
   const { data: htmlContent } = useSWR<string>(
     selectedDigestNames.length > 0
