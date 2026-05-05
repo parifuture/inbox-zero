@@ -6,6 +6,7 @@ import { ArchiveIcon, MailIcon } from "lucide-react";
 import type { SenderAction } from "@/generated/prisma/enums";
 import type { SenderDecision } from "@/generated/prisma/client";
 import type { SenderMessagesResponse } from "@/app/api/sender-decisions/[senderEmail]/messages/route";
+import type { UserLabelsResponse } from "@/app/api/user/labels/route";
 import type {
   ApplyRetroResponse,
   ApplyRetroStatusResponse,
@@ -51,11 +52,18 @@ const ACTION_LABELS: Record<SenderAction, string> = {
 
 export function DecisionDetail({
   decision,
+  labels,
   onActionChange,
+  onKeepLabelChange,
   applyRetroSignal,
 }: {
   decision: SenderDecision | null;
+  labels?: UserLabelsResponse;
   onActionChange: (action: SenderAction) => void;
+  onKeepLabelChange?: (
+    keepLabelId: string | null,
+    keepLabelName: string | null,
+  ) => void;
   applyRetroSignal?: number;
 }) {
   const [retroOpen, setRetroOpen] = useState(false);
@@ -234,6 +242,31 @@ export function DecisionDetail({
               ))}
             </SelectContent>
           </Select>
+          {decision.action === "always_keep" && labels && onKeepLabelChange ? (
+            <Select
+              value={decision.keepLabelId || "__none"}
+              onValueChange={(v) => {
+                if (v === "__none") {
+                  onKeepLabelChange(null, null);
+                } else {
+                  const l = labels.find((x) => x.gmailLabelId === v);
+                  onKeepLabelChange(v, l?.name ?? null);
+                }
+              }}
+            >
+              <SelectTrigger className="w-[200px]" aria-label="Keep label">
+                <SelectValue placeholder="No extra label" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">No extra label</SelectItem>
+                {labels.map((l) => (
+                  <SelectItem key={l.id} value={l.gmailLabelId}>
+                    {l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           {decision.action === "auto_trash" ||
           decision.action === "auto_archive" ||
           decision.action === "always_keep" ? (

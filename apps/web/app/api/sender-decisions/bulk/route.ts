@@ -16,6 +16,8 @@ const bulkSchema = z.object({
   senderEmails: z.array(z.string().min(1)).min(1).max(500),
   action: z.enum(ACTIONS),
   note: z.string().nullable().optional(),
+  keepLabelId: z.string().nullable().optional(),
+  keepLabelName: z.string().nullable().optional(),
 });
 
 export const POST = withEmailAccount(
@@ -30,7 +32,8 @@ export const POST = withEmailAccount(
         { status: 400 },
       );
     }
-    const { senderEmails, action, note } = parsed.data;
+    const { senderEmails, action, note, keepLabelId, keepLabelName } =
+      parsed.data;
 
     let updated = 0;
     let skipped = 0;
@@ -58,6 +61,9 @@ export const POST = withEmailAccount(
         action,
         decisionSource: "user",
         note: note ?? existing?.note ?? null,
+        keepLabelId: action === "always_keep" ? (keepLabelId ?? null) : null,
+        keepLabelName:
+          action === "always_keep" ? (keepLabelName ?? null) : null,
         auditSource: "ui:decisions",
         reason: `bulk:${senderEmails.length} senders`,
         kind: "bulk",

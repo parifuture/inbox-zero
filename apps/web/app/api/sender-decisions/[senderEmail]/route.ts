@@ -18,6 +18,8 @@ const ACTIONS = [
 const patchSchema = z.object({
   action: z.enum(ACTIONS).optional(),
   note: z.string().nullable().optional(),
+  keepLabelId: z.string().nullable().optional(),
+  keepLabelName: z.string().nullable().optional(),
 });
 
 function decodeSenderParam(raw: string): string {
@@ -59,14 +61,27 @@ export const PATCH = withEmailAccount(
       );
     }
 
+    const keepLabelIdProvided = Object.hasOwn(parsed.data, "keepLabelId");
+    const keepLabelNameProvided = Object.hasOwn(parsed.data, "keepLabelName");
+
     const after = await changeSenderDecision({
       emailAccountId,
       senderEmail: canonical,
       action: parsed.data.action ?? before.action,
       decisionSource: "user",
       note: parsed.data.note ?? before.note,
+      keepLabelId: keepLabelIdProvided
+        ? (parsed.data.keepLabelId ?? null)
+        : before.keepLabelId,
+      keepLabelName: keepLabelNameProvided
+        ? (parsed.data.keepLabelName ?? null)
+        : before.keepLabelName,
       auditSource: "ui:decisions",
-      reason: parsed.data.action ? `action=${parsed.data.action}` : null,
+      reason: parsed.data.action
+        ? `action=${parsed.data.action}`
+        : keepLabelIdProvided || keepLabelNameProvided
+          ? "keepLabel updated"
+          : null,
       allowOverwriteUser: true,
       actor: "user",
     });

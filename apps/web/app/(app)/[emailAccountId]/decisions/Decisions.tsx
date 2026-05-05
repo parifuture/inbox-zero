@@ -15,6 +15,7 @@ import {
 import type { SenderAction } from "@/generated/prisma/enums";
 import type { SenderDecision } from "@/generated/prisma/client";
 import type { ListSenderDecisionsResponse } from "@/app/api/sender-decisions/route";
+import type { UserLabelsResponse } from "@/app/api/user/labels/route";
 import { PageWrapper } from "@/components/PageWrapper";
 import { LoadingContent } from "@/components/LoadingContent";
 import { PageHeading } from "@/components/Typography";
@@ -111,6 +112,7 @@ export function Decisions() {
   const [focused, setFocused] = useState<SenderDecision | null>(null);
   const [newSender, setNewSender] = useState("");
   const [bulkAction, setBulkAction] = useState<SenderAction>("auto_trash");
+  const [bulkKeepLabelId, setBulkKeepLabelId] = useState<string>("");
   const [pending, setPending] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -149,7 +151,7 @@ export function Decisions() {
     if (!focused) return;
     const idx = ACTION_CYCLE.indexOf(focused.action);
     const next = ACTION_CYCLE[(idx + 1) % ACTION_CYCLE.length];
-    patchOne(focused.senderEmail, next);
+    patchOne(focused.senderEmail, { action: next });
   }
 
   useHotkeys(
@@ -215,7 +217,14 @@ export function Decisions() {
     setSelected(next);
   }
 
-  async function patchOne(senderEmail: string, action: SenderAction) {
+  async function patchOne(
+    senderEmail: string,
+    patch: {
+      action?: SenderAction;
+      keepLabelId?: string | null;
+      keepLabelName?: string | null;
+    },
+  ) {
     setPending(true);
     try {
       const res = await fetch(
@@ -223,11 +232,15 @@ export function Decisions() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action }),
+          body: JSON.stringify(patch),
         },
       );
       if (!res.ok) throw new Error(await res.text());
-      toastSuccess({ description: `Set to ${action}` });
+      toastSuccess({
+        description: patch.action
+          ? `Set to ${patch.action}`
+          : "Keep label updated",
+      });
       await mutate();
     } catch (err) {
       toastError({ description: String(err) });
@@ -257,16 +270,25 @@ export function Decisions() {
     }
   }
 
+  const { data: labelsData } = useSWR<UserLabelsResponse>("/api/user/labels");
+  const labels = labelsData ?? [];
+
   async function applyBulk() {
     if (selected.size === 0) return;
     setPending(true);
     try {
+      const keepLabel =
+        bulkAction === "always_keep" && bulkKeepLabelId
+          ? labels.find((l) => l.gmailLabelId === bulkKeepLabelId)
+          : null;
       const res = await fetch("/api/sender-decisions/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           senderEmails: Array.from(selected),
           action: bulkAction,
+          keepLabelId: keepLabel?.gmailLabelId ?? null,
+          keepLabelName: keepLabel?.name ?? null,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -366,6 +388,24 @@ export function Decisions() {
               ))}
             </SelectContent>
           </Select>
+          {bulkAction === "always_keep" ? (
+            <Select
+              value={bulkKeepLabelId || "__none"}
+              onValueChange={(v) => setBulkKeepLabelId(v === "__none" ? "" : v)}
+            >
+              <SelectTrigger className="w-[200px]" aria-label="Bulk keep label">
+                <SelectValue placeholder="No extra label" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">No extra label</SelectItem>
+                {labels.map((l) => (
+                  <SelectItem key={l.id} value={l.gmailLabelId}>
+                    {l.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button size="sm" onClick={applyBulk} disabled={pending}>
             {pending ? (
               <Loader2Icon className="size-4 animate-spin mr-2" />
@@ -429,7 +469,9 @@ export function Decisions() {
                       <Select
                         value={item.action}
                         onValueChange={(v) =>
-                          patchOne(item.senderEmail, v as SenderAction)
+                          patchOne(item.senderEmail, {
+                            action: v as SenderAction,
+                          })
                         }
                       >
                         <SelectTrigger className="w-[140px] h-7">
@@ -468,8 +510,16 @@ export function Decisions() {
         <div className="border rounded min-h-[400px]">
           <DecisionDetail
             decision={focused}
+            labels={labels}
             onActionChange={(action) => {
-              if (focused) patchOne(focused.senderEmail, action);
+              if (focused) patchOne(focused.senderEmail, { action });
+            }}
+            onKeepLabelChange={(labelId, labelName) => {
+              if (focused)
+                patchOne(focused.senderEmail, {
+                  keepLabelId: labelId,
+                  keepLabelName: labelName,
+                });
             }}
             applyRetroSignal={applyRetroSignal}
           />
