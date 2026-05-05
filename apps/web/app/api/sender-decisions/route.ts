@@ -3,8 +3,8 @@ import { z } from "zod";
 import type { SenderDecision } from "@/generated/prisma/client";
 import { withEmailAccount } from "@/utils/middleware";
 import prisma from "@/utils/prisma";
-import { logDecisionAudit } from "@/utils/sender-decision/audit";
-import { canonicalizeSender, upsertDecision } from "@/utils/sender-decision";
+import { canonicalizeSender } from "@/utils/sender-decision";
+import { changeSenderDecision } from "@/utils/sender-decision/change";
 
 export type ListSenderDecisionsResponse = {
   items: SenderDecision[];
@@ -104,30 +104,18 @@ export const POST = withEmailAccount(
       );
     }
 
-    const before = await prisma.senderDecision.findUnique({
-      where: {
-        emailAccountId_senderEmail: { emailAccountId, senderEmail: canonical },
-      },
-    });
-
-    const after = await upsertDecision({
+    const result = await changeSenderDecision({
       emailAccountId,
       senderEmail: canonical,
       action: parsed.data.action,
-      source: "user",
+      decisionSource: "user",
       note: parsed.data.note ?? null,
-      protectUserDecisions: false, // explicit user action = overwrite
-    });
-
-    await logDecisionAudit({
-      emailAccountId,
-      senderEmail: canonical,
-      before,
-      after,
+      auditSource: "ui:decisions",
+      reason: "add sender",
+      allowOverwriteUser: true,
       actor: "user",
-      action: before ? "update" : "create",
     });
 
-    return NextResponse.json({ item: after });
+    return NextResponse.json({ item: result.after });
   },
 );

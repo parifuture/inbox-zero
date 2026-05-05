@@ -11,6 +11,8 @@ export async function logDecisionAudit(params: {
   after: SenderDecision | null;
   actor: AuditActor;
   action: AuditAction;
+  source?: string | null;
+  reason?: string | null;
 }): Promise<void> {
   await prisma.senderDecisionAudit.create({
     data: {
@@ -20,6 +22,8 @@ export async function logDecisionAudit(params: {
       after: (params.after as unknown as Prisma.InputJsonValue) ?? undefined,
       actor: params.actor,
       action: params.action,
+      source: params.source ?? undefined,
+      reason: params.reason ?? undefined,
     },
   });
 }

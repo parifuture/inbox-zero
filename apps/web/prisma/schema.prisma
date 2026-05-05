@@ -1550,10 +1550,13 @@ model SenderDecisionAudit {
   after          Json?
   actor          String // "user" | "system" | userId
   action         String // "create" | "update" | "delete" | "bulk"
+  source         String? // surface that produced the change, e.g. "ui:decisions", "api:import", "rule"
+  reason         String? // optional free-text explanation for the change
   createdAt      DateTime     @default(now())
 
   @@index([emailAccountId, senderEmail])
   @@index([emailAccountId, createdAt])
+  @@index([emailAccountId, source])
 }
 
 // Background job that retroactively applies a SenderDecision to existing
