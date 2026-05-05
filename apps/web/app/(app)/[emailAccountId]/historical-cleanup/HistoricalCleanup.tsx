@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { PageWrapper } from "@/components/PageWrapper";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -19,6 +19,32 @@ import type {
   SenderSortOrder,
   SenderStatusFilter,
 } from "./types";
+import { useHotkeys } from "@/hooks/useHotkeys";
+import {
+  HotkeyHelpOverlay,
+  type HotkeyHelpGroup,
+} from "@/components/HotkeyHelpOverlay";
+
+const HOTKEY_HELP: HotkeyHelpGroup[] = [
+  {
+    title: "Navigation",
+    entries: [
+      { keys: "j / k", description: "Move focus down / up in the sender list" },
+      { keys: "g g", description: "Jump to first sender" },
+      { keys: "G", description: "Jump to last sender" },
+      { keys: "/", description: "Focus search" },
+      { keys: "esc", description: "Clear focused sender" },
+    ],
+  },
+  {
+    title: "Actions on focused sender",
+    entries: [
+      { keys: "x", description: "Archive focused sender's emails" },
+      { keys: "e", description: "Skip focused sender (mark as handled)" },
+      { keys: "?", description: "Toggle this help overlay" },
+    ],
+  },
+];
 
 const PAGE_LIMIT = 100;
 
@@ -30,6 +56,8 @@ export function HistoricalCleanup() {
   const [selectedRow, setSelectedRow] = useState<Sender | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [isWorking, setIsWorking] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const params = useMemo(
     () => ({
@@ -135,6 +163,48 @@ export function HistoricalCleanup() {
     [senders, selectedRows],
   );
 
+  const focusedIndex = useMemo(
+    () =>
+      selectedRow
+        ? senders.findIndex((s) => s.senderEmail === selectedRow.senderEmail)
+        : -1,
+    [selectedRow, senders],
+  );
+
+  const moveFocus = useCallback(
+    (delta: number) => {
+      if (senders.length === 0) return;
+      const next =
+        focusedIndex === -1
+          ? delta > 0
+            ? 0
+            : senders.length - 1
+          : Math.min(senders.length - 1, Math.max(0, focusedIndex + delta));
+      setSelectedRow(senders[next] ?? null);
+    },
+    [senders, focusedIndex],
+  );
+
+  useHotkeys(
+    {
+      j: () => moveFocus(1),
+      k: () => moveFocus(-1),
+      "g g": () => senders[0] && setSelectedRow(senders[0]),
+      G: () =>
+        senders.length && setSelectedRow(senders[senders.length - 1] ?? null),
+      "/": () => searchRef.current?.focus(),
+      "?": () => setHelpOpen((v) => !v),
+      esc: () => setSelectedRow(null),
+      x: () => {
+        if (selectedRow) handleArchive([selectedRow.senderEmail]);
+      },
+      e: () => {
+        if (selectedRow) handleSkip([selectedRow.senderEmail]);
+      },
+    },
+    { enabled: !helpOpen },
+  );
+
   return (
     <PageWrapper>
       <PageHeader
@@ -156,6 +226,7 @@ export function HistoricalCleanup() {
               total={total}
               search={search}
               onSearchChange={setSearch}
+              searchInputRef={searchRef}
               status={status}
               onStatusChange={onStatusChange}
               sort={sort}
@@ -192,6 +263,12 @@ export function HistoricalCleanup() {
         onSkip={() => handleSkip(Array.from(selectedRows))}
         onClear={() => setSelectedRows(new Set())}
         isWorking={isWorking}
+      />
+
+      <HotkeyHelpOverlay
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        groups={HOTKEY_HELP}
       />
     </PageWrapper>
   );

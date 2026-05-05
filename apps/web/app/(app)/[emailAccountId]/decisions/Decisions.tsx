@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -41,6 +41,11 @@ import { DecisionDetail } from "@/app/(app)/[emailAccountId]/decisions/DecisionD
 import { DecisionsCsvToolbar } from "@/app/(app)/[emailAccountId]/decisions/DecisionsCsvToolbar";
 import { DecisionsOnboarding } from "@/app/(app)/[emailAccountId]/decisions/DecisionsOnboarding";
 import { toastError, toastSuccess } from "@/components/Toast";
+import { useHotkeys } from "@/hooks/useHotkeys";
+import {
+  HotkeyHelpOverlay,
+  type HotkeyHelpGroup,
+} from "@/components/HotkeyHelpOverlay";
 
 const ACTION_OPTIONS: {
   value: SenderAction;
@@ -65,6 +70,40 @@ function _actionBadge(action: SenderAction) {
   return <Badge variant={variant}>{opt.label}</Badge>;
 }
 
+const HOTKEY_HELP: HotkeyHelpGroup[] = [
+  {
+    title: "Navigation",
+    entries: [
+      { keys: "j / k", description: "Move focus down / up in the sender list" },
+      { keys: "g g", description: "Jump to first sender" },
+      { keys: "G", description: "Jump to last sender" },
+      { keys: "/", description: "Focus search" },
+      { keys: "esc", description: "Clear search / close detail" },
+    ],
+  },
+  {
+    title: "Actions on focused sender",
+    entries: [
+      {
+        keys: "e",
+        description: "Edit — cycle action (trash → archive → keep → review)",
+      },
+      {
+        keys: "x",
+        description: "Apply retroactively… (opens confirmation modal)",
+      },
+      { keys: "?", description: "Toggle this help overlay" },
+    ],
+  },
+];
+
+const ACTION_CYCLE: SenderAction[] = [
+  "auto_trash",
+  "auto_archive",
+  "always_keep",
+  "review",
+];
+
 export function Decisions() {
   const [search, setSearch] = useState("");
   const [actionFilter, setActionFilter] = useState<SenderAction | "all">("all");
@@ -74,6 +113,9 @@ export function Decisions() {
   const [bulkAction, setBulkAction] = useState<SenderAction>("auto_trash");
   const [pending, setPending] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [applyRetroSignal, setApplyRetroSignal] = useState(0);
+  const searchRef = useRef<HTMLInputElement | null>(null);
 
   const query = new URLSearchParams();
   if (search) query.set("search", search);
@@ -86,6 +128,60 @@ export function Decisions() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+
+  const focusedIndex = useMemo(() => {
+    if (!focused) return -1;
+    return items.findIndex((i) => i.senderEmail === focused.senderEmail);
+  }, [focused, items]);
+
+  function moveFocus(delta: number) {
+    if (items.length === 0) return;
+    const next =
+      focusedIndex === -1
+        ? delta > 0
+          ? 0
+          : items.length - 1
+        : Math.min(items.length - 1, Math.max(0, focusedIndex + delta));
+    setFocused(items[next] ?? null);
+  }
+
+  function cycleFocusedAction() {
+    if (!focused) return;
+    const idx = ACTION_CYCLE.indexOf(focused.action);
+    const next = ACTION_CYCLE[(idx + 1) % ACTION_CYCLE.length];
+    patchOne(focused.senderEmail, next);
+  }
+
+  useHotkeys(
+    {
+      j: () => moveFocus(1),
+      k: () => moveFocus(-1),
+      "g g": () => {
+        if (items[0]) setFocused(items[0]);
+      },
+      G: () => {
+        if (items.length) setFocused(items[items.length - 1] ?? null);
+      },
+      "/": () => searchRef.current?.focus(),
+      "?": () => setHelpOpen((v) => !v),
+      esc: () => {
+        if (search) setSearch("");
+        else setFocused(null);
+      },
+      e: () => cycleFocusedAction(),
+      x: () => {
+        if (!focused) return;
+        if (
+          focused.action === "auto_trash" ||
+          focused.action === "auto_archive" ||
+          focused.action === "always_keep"
+        ) {
+          setApplyRetroSignal((n) => n + 1);
+        }
+      },
+    },
+    { enabled: !helpOpen },
+  );
 
   // EL-374 — onboarding appears on the very first visit (no SenderDecision
   // rows yet) and only when no filters are narrowing the list. It's a one-
@@ -203,7 +299,8 @@ export function Decisions() {
         <div className="flex items-center gap-2 flex-1 min-w-[200px] max-w-md">
           <SearchIcon className="size-4 text-muted-foreground" />
           <Input
-            placeholder="Search email or domain"
+            ref={searchRef}
+            placeholder="Search email or domain ( / )"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -374,9 +471,16 @@ export function Decisions() {
             onActionChange={(action) => {
               if (focused) patchOne(focused.senderEmail, action);
             }}
+            applyRetroSignal={applyRetroSignal}
           />
         </div>
       </div>
+
+      <HotkeyHelpOverlay
+        open={helpOpen}
+        onOpenChange={setHelpOpen}
+        groups={HOTKEY_HELP}
+      />
     </PageWrapper>
   );
 }

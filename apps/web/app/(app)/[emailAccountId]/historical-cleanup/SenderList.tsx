@@ -72,6 +72,7 @@ export function SenderList({
   total,
   search,
   onSearchChange,
+  searchInputRef,
   status,
   onStatusChange,
   sort,
@@ -93,6 +94,7 @@ export function SenderList({
   total: number;
   search: string;
   onSearchChange: (value: string) => void;
+  searchInputRef?: React.RefObject<HTMLInputElement | null>;
   status: SenderStatusFilter;
   onStatusChange: (value: SenderStatusFilter) => void;
   sort: SenderSortKey;
@@ -124,6 +126,7 @@ export function SenderList({
         <form onSubmit={handleSearchSubmit} className="relative">
           <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder="Search sender or domain…"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
