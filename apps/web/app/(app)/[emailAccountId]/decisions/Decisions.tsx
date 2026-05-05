@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DecisionDetail } from "@/app/(app)/[emailAccountId]/decisions/DecisionDetail";
+import { DecisionsCsvToolbar } from "@/app/(app)/[emailAccountId]/decisions/DecisionsCsvToolbar";
 import { DecisionsOnboarding } from "@/app/(app)/[emailAccountId]/decisions/DecisionsOnboarding";
 import { toastError, toastSuccess } from "@/components/Toast";
 
@@ -195,6 +196,7 @@ export function Decisions() {
             Per-sender triage policy. {total} senders tracked.
           </div>
         </div>
+        <DecisionsCsvToolbar onImported={() => mutate()} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
