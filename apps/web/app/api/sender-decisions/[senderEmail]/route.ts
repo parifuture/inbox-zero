@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withEmailAccount } from "@/utils/middleware";
 import prisma from "@/utils/prisma";
-import { logDecisionAudit } from "@/utils/sender-decision/audit";
-import { canonicalizeSender, upsertDecision } from "@/utils/sender-decision";
+import { canonicalizeSender } from "@/utils/sender-decision";
+import {
+  changeSenderDecision,
+  deleteSenderDecision,
+} from "@/utils/sender-decision/change";
 
 const ACTIONS = [
   "auto_trash",
@@ -56,25 +59,19 @@ export const PATCH = withEmailAccount(
       );
     }
 
-    const after = await upsertDecision({
+    const after = await changeSenderDecision({
       emailAccountId,
       senderEmail: canonical,
       action: parsed.data.action ?? before.action,
-      source: "user",
+      decisionSource: "user",
       note: parsed.data.note ?? before.note,
-      protectUserDecisions: false,
-    });
-
-    await logDecisionAudit({
-      emailAccountId,
-      senderEmail: canonical,
-      before,
-      after,
+      auditSource: "ui:decisions",
+      reason: parsed.data.action ? `action=${parsed.data.action}` : null,
+      allowOverwriteUser: true,
       actor: "user",
-      action: "update",
     });
 
-    return NextResponse.json({ item: after });
+    return NextResponse.json({ item: after.after });
   },
 );
 
@@ -106,24 +103,16 @@ export const DELETE = withEmailAccount(
 
     // Reset to `review` + source=user (explicit "undo") rather than hard-delete
     // so we preserve volume telemetry + audit trail.
-    const after = await upsertDecision({
+    const result = await deleteSenderDecision({
       emailAccountId,
       senderEmail: canonical,
-      action: "review",
-      source: "user",
+      decisionSource: "user",
       note: null,
-      protectUserDecisions: false,
-    });
-
-    await logDecisionAudit({
-      emailAccountId,
-      senderEmail: canonical,
-      before,
-      after,
+      auditSource: "ui:decisions",
+      reason: "explicit reset to review",
       actor: "user",
-      action: "delete",
     });
 
-    return NextResponse.json({ item: after });
+    return NextResponse.json({ item: result.after });
   },
 );

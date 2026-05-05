@@ -6,7 +6,7 @@
     "dev": "turbo dev --filter=./apps/web",
     "worker": "pnpm --filter @inboxzero/worker start",
     "test": "turbo run test --filter=./apps/web",
-    "lint": "turbo lint",
+    "lint": "turbo lint && node scripts/check-sender-decision-writes.mjs",
     "postinstall": "sh clone-marketing.sh",
     "prepare": "husky install",
     "ncu": "ncu -u -ws",

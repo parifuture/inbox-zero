@@ -36,8 +36,7 @@ import {
   computeImportDiff,
   parseSenderDecisionCsv,
 } from "@/utils/sender-decision/csv";
-import { upsertDecision } from "@/utils/sender-decision";
-import { logDecisionAudit } from "@/utils/sender-decision/audit";
+import { changeSenderDecision } from "@/utils/sender-decision/change";
 import { createScopedLogger } from "@/utils/logger";
 
 const logger = createScopedLogger("sender-decisions/import");
@@ -159,47 +158,31 @@ export const POST = withEmailAccount(
     if (mode === "merge" && (diff.creates.length || diff.updates.length)) {
       applied = true;
       for (const c of diff.creates) {
-        const after = await upsertDecision({
+        await changeSenderDecision({
           emailAccountId,
           senderEmail: c.senderEmail,
           action: c.action,
-          source: "user",
+          decisionSource: "user",
           note: c.note,
-          protectUserDecisions: false,
-        });
-        await logDecisionAudit({
-          emailAccountId,
-          senderEmail: c.senderEmail,
-          before: null,
-          after,
+          auditSource: "api:import",
+          reason: "csv import (create)",
+          kind: "create",
+          allowOverwriteUser: true,
           actor: "user",
-          action: "create",
         });
       }
       for (const u of diff.updates) {
-        const before = await prisma.senderDecision.findUnique({
-          where: {
-            emailAccountId_senderEmail: {
-              emailAccountId,
-              senderEmail: u.senderEmail,
-            },
-          },
-        });
-        const after = await upsertDecision({
+        await changeSenderDecision({
           emailAccountId,
           senderEmail: u.senderEmail,
           action: u.after.action,
-          source: "user",
+          decisionSource: "user",
           note: u.after.note,
-          protectUserDecisions: false,
-        });
-        await logDecisionAudit({
-          emailAccountId,
-          senderEmail: u.senderEmail,
-          before,
-          after,
+          auditSource: "api:import",
+          reason: "csv import (update)",
+          kind: "update",
+          allowOverwriteUser: true,
           actor: "user",
-          action: "update",
         });
       }
       logger.info("csv import applied", {

@@ -140,6 +140,7 @@ export async function applySenderDecisionGate(params: {
   });
 
   // Fire-and-forget: update volume telemetry. Best-effort; non-fatal.
+  // @allow-direct-senderdecision-write: telemetry only (lastSeenAt/messageCount/autoAppliedAt) — no action/source/note change, so the audit log doesn't need a row.
   prisma.senderDecision
     .update({
       where: { id: decision.id },

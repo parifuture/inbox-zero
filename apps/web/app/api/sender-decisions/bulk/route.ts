@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { withEmailAccount } from "@/utils/middleware";
 import prisma from "@/utils/prisma";
-import { logDecisionAudit } from "@/utils/sender-decision/audit";
-import { canonicalizeSender, upsertDecision } from "@/utils/sender-decision";
+import { canonicalizeSender } from "@/utils/sender-decision";
+import { changeSenderDecision } from "@/utils/sender-decision/change";
 
 const ACTIONS = [
   "auto_trash",
@@ -42,31 +42,27 @@ export const POST = withEmailAccount(
         continue;
       }
 
-      const before = await prisma.senderDecision.findUnique({
+      const existing = await prisma.senderDecision.findUnique({
         where: {
           emailAccountId_senderEmail: {
             emailAccountId,
             senderEmail: canonical,
           },
         },
+        select: { note: true },
       });
 
-      const after = await upsertDecision({
+      await changeSenderDecision({
         emailAccountId,
         senderEmail: canonical,
         action,
-        source: "user",
-        note: note ?? before?.note ?? null,
-        protectUserDecisions: false,
-      });
-
-      await logDecisionAudit({
-        emailAccountId,
-        senderEmail: canonical,
-        before,
-        after,
+        decisionSource: "user",
+        note: note ?? existing?.note ?? null,
+        auditSource: "ui:decisions",
+        reason: `bulk:${senderEmails.length} senders`,
+        kind: "bulk",
+        allowOverwriteUser: true,
         actor: "user",
-        action: "bulk",
       });
       updated++;
     }

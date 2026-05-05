@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { toastError, toastSuccess } from "@/components/Toast";
+import { DecisionHistoryPanel } from "@/app/(app)/[emailAccountId]/decisions/DecisionHistoryPanel";
 
 const ACTION_LABELS: Record<SenderAction, string> = {
   auto_trash: "Auto-trash",
@@ -304,6 +305,8 @@ export function DecisionDetail({
           </Table>
         </LoadingContent>
       </div>
+
+      <DecisionHistoryPanel senderEmail={decision.senderEmail} />
 
       <Dialog open={retroOpen} onOpenChange={setRetroOpen}>
         <DialogContent>
