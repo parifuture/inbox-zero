@@ -54,6 +54,9 @@ ENV NEXT_PRIVATE_STANDALONE=true
 ENV NODE_OPTIONS=--max_old_space_size=3072
 
 # Feature flag placeholders
+ARG SKIP_TYPE_CHECK="true"
+ENV SKIP_TYPE_CHECK=${SKIP_TYPE_CHECK}
+
 ARG NEXT_PUBLIC_BASE_URL="http://NEXT_PUBLIC_BASE_URL_PLACEHOLDER"
 ENV NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}
 ARG NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS="NEXT_PUBLIC_BYPASS_PREMIUM_CHECKS_PLACEHOLDER"
@@ -120,6 +123,6 @@ ENV NODE_PATH=/usr/local/lib/node_modules
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1
 
 CMD ["/app/docker/scripts/start.sh"]

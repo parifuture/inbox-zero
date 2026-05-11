@@ -1,6 +1,15 @@
 # VCS
 .git
 
+# Symlinks / local agent config that break Docker build context
+.agents
+clawhub
+skills
+skills-lock.json
+copilot
+qa
+FORMULA
+
 # Node / package managers
 node_modules
 **/node_modules
@@ -41,9 +50,9 @@ Dockerfile*
 _tmp
 .tmp
 
-
-# Agent workspace symlink (local dev)
+# Agent workspace symlink (local dev) / Agent/AI tooling (contains symlinks outside build context)
 .agents
 **/.agents
+agents/.claude
 skills
 **/skills

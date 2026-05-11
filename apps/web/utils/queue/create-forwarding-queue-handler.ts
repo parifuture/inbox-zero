@@ -34,7 +34,7 @@ export function createForwardingQueueHandler<TSchema extends z.ZodTypeAny>({
 }) {
   const logger = createScopedLogger(loggerScope);
 
-  return handleCallback<z.infer<TSchema>>(
+  const handler = handleCallback<z.infer<TSchema>>(
     async (message, metadata) => {
       const parseResult = schema.safeParse(message);
       if (!parseResult.success) {
@@ -71,4 +71,9 @@ export function createForwardingQueueHandler<TSchema extends z.ZodTypeAny>({
       }),
     },
   );
+
+  // Wrap with a Next.js-compatible signature.
+  // @vercel/queue's handleCallback returns (requestOrEvent: CallbackRequestInput)
+  // but Next.js 16 requires (request: Request | NextRequest) => Promise<Response>.
+  return (request: Request): Promise<Response> => handler(request);
 }
