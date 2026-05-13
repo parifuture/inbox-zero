@@ -14,6 +14,8 @@ import { GroupItemSource } from "@/generated/prisma/enums";
 import { checkSenderRuleHistory } from "@/utils/rule/check-sender-rule-history";
 import { createEmailProvider } from "@/utils/email/provider";
 import type { EmailProvider } from "@/utils/email/types";
+import { categorizeSender } from "@/utils/categorize/senders/categorize";
+import { validateUserAndAiAccess } from "@/utils/user/validate";
 
 export const maxDuration = 60;
 
@@ -204,7 +206,34 @@ async function process({
       }
     }
 
-    await savePatternCheck({ emailAccountId, from });
+    const { created } = await savePatternCheck({ emailAccountId, from });
+
+    // EL-426 fix: if this call CREATED the Newsletter row (rather than
+    // updating an existing one), the row will have `patternAnalyzed=true`
+    // but `categoryId=null`. The webhook auto-categorize path only runs
+    // when a NEW message arrives from the sender, so senders that don't
+    // get another message stay stalled. Trigger categorization here to
+    // close the gap.
+    if (created && emailAccount.autoCategorizeSenders) {
+      try {
+        const { emailAccount: validatedAccount } =
+          await validateUserAndAiAccess({ emailAccountId });
+        await categorizeSender(
+          from,
+          {
+            ...validatedAccount,
+            account: { provider: emailAccount.account.provider },
+          },
+          provider,
+        );
+        logger.info("Auto-categorized new sender after pattern analysis");
+      } catch (error) {
+        logger.warn("Failed to auto-categorize sender after pattern analysis", {
+          error,
+        });
+        // Non-fatal — the stalled row can be fixed by recategorize-stalled.ts
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -218,7 +247,9 @@ async function process({
 }
 
 /**
- * Record that we've analyzed a sender for patterns
+ * Record that we've analyzed a sender for patterns.
+ * Returns `{ created }` so callers can decide whether to trigger
+ * follow-up work like auto-categorization (EL-426).
  */
 async function savePatternCheck({
   emailAccountId,
@@ -226,7 +257,17 @@ async function savePatternCheck({
 }: {
   emailAccountId: string;
   from: string;
-}) {
+}): Promise<{ created: boolean }> {
+  const existing = await prisma.newsletter.findUnique({
+    where: {
+      email_emailAccountId: {
+        email: from,
+        emailAccountId,
+      },
+    },
+    select: { id: true },
+  });
+
   await prisma.newsletter.upsert({
     where: {
       email_emailAccountId: {
@@ -245,6 +286,8 @@ async function savePatternCheck({
       lastAnalyzedAt: new Date(),
     },
   });
+
+  return { created: !existing };
 }
 
 /**
@@ -338,6 +381,9 @@ async function getEmailAccountWithRules({
       multiRuleSelectionEnabled: true,
       timezone: true,
       calendarBookingLink: true,
+      // EL-426: needed to decide whether to auto-categorize a newly
+      // created Newsletter row after pattern analysis.
+      autoCategorizeSenders: true,
       user: {
         select: {
           aiProvider: true,
