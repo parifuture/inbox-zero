@@ -43,6 +43,11 @@ describe("historical-senders query builders (EL-323 safety filters)", () => {
       expect(q).toContain("-in:trash");
     });
 
+    it("explicitly excludes starred messages (EL-432 defence-in-depth)", () => {
+      const q = buildArchiveQuery("foo@bar.com");
+      expect(q).toContain("-is:starred");
+    });
+
     it("includes the literal sender verbatim (no URL-encoding surprises)", () => {
       const q = buildArchiveQuery("first.last+tag@Example.Com");
       expect(q).toContain("from:first.last+tag@Example.Com");
