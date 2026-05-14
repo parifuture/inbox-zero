@@ -3,9 +3,26 @@ import { isDefined } from "@/utils/types";
 import type { EmailAccountWithAI } from "@/utils/llms/types";
 import type { Category } from "@/generated/prisma/client";
 import { formatCategoriesForPrompt } from "@/utils/ai/categorize-sender/format-categories";
-import { extractEmailAddress } from "@/utils/email";
+import { extractDomainFromEmail, extractEmailAddress } from "@/utils/email";
 import { getModel } from "@/utils/llms/model";
 import { createGenerateObject } from "@/utils/llms";
+import {
+  PRE_CLASSIFIER_CONFIDENCE_THRESHOLD,
+  preClassify,
+} from "@/utils/ai/categorize-senders/pre-classifier";
+import { createScopedLogger } from "@/utils/logger";
+
+const logger = createScopedLogger("pre-classifier");
+
+function isPreClassifierEnabled(): boolean {
+  return process.env.PRE_CLASSIFIER_ENABLED === "true";
+}
+
+function getLocalPart(email: string): string {
+  const addr = extractEmailAddress(email) || email;
+  const at = addr.indexOf("@");
+  return at >= 0 ? addr.slice(0, at) : addr;
+}
 
 export const REQUEST_MORE_INFORMATION_CATEGORY = "RequestMoreInformation";
 export const UNKNOWN_CATEGORY = "Other";
@@ -39,13 +56,61 @@ export async function aiCategorizeSenders({
 > {
   if (senders.length === 0) return [];
 
+  // EL-427: deterministic pre-classifier short-circuit. Behind feature flag.
+  // We split senders into pre-classified + remaining; only remaining go to Bedrock.
+  const preClassified: { sender: string; category: string }[] = [];
+  let sendersForBedrock = senders;
+
+  if (isPreClassifierEnabled()) {
+    const remaining: typeof senders = [];
+    for (const s of senders) {
+      const senderLocalPart = getLocalPart(s.emailAddress);
+      const senderDomain = extractDomainFromEmail(s.emailAddress);
+      const recentSubjects = s.emails.map((e) => e.subject).filter(Boolean);
+      const pre = preClassify({
+        senderLocalPart,
+        senderDomain,
+        recentSubjects,
+      });
+      const hasMatchingCategory =
+        !!pre.category && categories.some((c) => c.name === pre.category);
+      if (
+        pre.category &&
+        pre.confidence >= PRE_CLASSIFIER_CONFIDENCE_THRESHOLD &&
+        hasMatchingCategory
+      ) {
+        logger.info("pre_classifier.hit", {
+          sender: s.emailAddress,
+          category: pre.category,
+          confidence: pre.confidence,
+          signals: pre.signals,
+        });
+        preClassified.push({ sender: s.emailAddress, category: pre.category });
+      } else {
+        logger.info("pre_classifier.miss", {
+          sender: s.emailAddress,
+          category: pre.category,
+          confidence: pre.confidence,
+          reason: !pre.category
+            ? "no_category"
+            : !hasMatchingCategory
+              ? "category_not_in_user_taxonomy"
+              : "below_threshold",
+        });
+        remaining.push(s);
+      }
+    }
+    sendersForBedrock = remaining;
+    if (sendersForBedrock.length === 0) return preClassified;
+  }
+
   const system = `You are an AI assistant specializing in email management and organization.
 Your task is to categorize email accounts based on their names, email addresses, and emails they've sent us.
 Provide accurate categorizations to help users efficiently manage their inbox.`;
 
   const prompt = `Categorize the following senders:
 
-  ${senders
+  ${sendersForBedrock
     .map(
       ({ emailAddress, emails }) => `<sender>
   <email_address>${emailAddress}</email_address>
@@ -104,7 +169,7 @@ ${formatCategoriesForPrompt(categories)}
 
   const matchedSenders = matchSendersWithFullEmail(
     aiResponse.object.senders,
-    senders.map((s) => s.emailAddress),
+    sendersForBedrock.map((s) => s.emailAddress),
   );
 
   // filter out any senders that don't have a valid category
@@ -119,7 +184,7 @@ ${formatCategoriesForPrompt(categories)}
     return r;
   });
 
-  return results;
+  return [...preClassified, ...results];
 }
 
 // match up emails with full email
