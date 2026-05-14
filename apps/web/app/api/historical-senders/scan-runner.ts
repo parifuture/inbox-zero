@@ -99,7 +99,9 @@ export function buildArchiveQuery(senderEmail: string): string {
   // `in:inbox` already excludes sent+trash by construction, but we keep the
   // explicit `-in:sent -in:trash` for defence-in-depth and to mirror the
   // scan query so a future reviewer can't accidentally widen either one.
-  return `from:${senderEmail} before:2024/01/01 in:inbox -in:sent -in:trash`;
+  // EL-432 also explicitly excludes `is:starred` so the bulk-archive sweep
+  // never touches anything Chotu has flagged for follow-up.
+  return `from:${senderEmail} before:2024/01/01 in:inbox -in:sent -in:trash -is:starred`;
 }
 
 export async function scanHistoricalSenders({

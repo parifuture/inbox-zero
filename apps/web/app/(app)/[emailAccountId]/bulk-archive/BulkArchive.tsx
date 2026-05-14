@@ -9,7 +9,9 @@ import {
   BulkArchiveSettingsModal,
   type BulkActionType,
 } from "@/app/(app)/[emailAccountId]/bulk-archive/BulkArchiveSettingsModal";
+import { SentHistoryArchive } from "@/app/(app)/[emailAccountId]/bulk-archive/SentHistoryArchive";
 import { BulkArchiveCards } from "@/components/BulkArchiveCards";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCategorizeProgress } from "@/app/(app)/[emailAccountId]/smart-categories/CategorizeProgress";
 import { CategorizeWithAiButton } from "@/app/(app)/[emailAccountId]/smart-categories/CategorizeWithAiButton";
 import type { CategorizedSendersResponse } from "@/app/api/user/categorize/senders/categorized/route";
@@ -19,10 +21,15 @@ import { TooltipExplanation } from "@/components/TooltipExplanation";
 import { PageHeading } from "@/components/Typography";
 import { EmailStatsPreloader } from "@/components/EmailStatsPreloader";
 
+type BulkArchiveTab = "categories" | "sent-history";
+
 export function BulkArchive() {
   const { isBulkCategorizing } = useCategorizeProgress();
   const [onboarding] = useQueryState("onboarding", parseAsBoolean);
   const [bulkAction, setBulkAction] = useState<BulkActionType>("archive");
+  const [tabParam] = useQueryState("tab");
+  const tab: BulkArchiveTab =
+    tabParam === "sent-history" ? "sent-history" : "categories";
 
   // Fetch data with SWR and poll while categorization is in progress
   const { data, error, isLoading, mutate } = useSWR<CategorizedSendersResponse>(
@@ -55,6 +62,7 @@ export function BulkArchive() {
   // Show setup dialog for first-time setup only
   const shouldShowSetup =
     !setupDismissed &&
+    tab === "categories" &&
     (onboarding || (!autoCategorizeSenders && !isBulkCategorizing));
 
   return (
@@ -64,25 +72,40 @@ export function BulkArchive() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <PageHeading>Bulk Archive</PageHeading>
-            <TooltipExplanation text="Archive emails in bulk by category to quickly clean up your inbox." />
+            <TooltipExplanation text="Archive emails in bulk by category, or by senders you've previously emailed." />
           </div>
           <div className="flex items-center gap-2">
             <BulkArchiveSettingsModal
               selectedAction={bulkAction}
               onActionChange={setBulkAction}
             />
-            <CategorizeWithAiButton
-              buttonProps={{ variant: "outline", size: "sm" }}
-            />
+            {tab === "categories" ? (
+              <CategorizeWithAiButton
+                buttonProps={{ variant: "outline", size: "sm" }}
+              />
+            ) : null}
           </div>
         </div>
-        <BulkArchiveProgress onComplete={handleProgressComplete} />
-        <BulkArchiveCards
-          emailGroups={emailGroups}
-          categories={categories}
-          bulkAction={bulkAction}
-          onCategoryChange={mutate}
-        />
+        <Tabs defaultValue="categories" className="mt-4 flex flex-col gap-4">
+          <TabsList>
+            <TabsTrigger value="categories">Bulk Archive</TabsTrigger>
+            <TabsTrigger value="sent-history">
+              Senders You've Replied To
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="categories" className="mt-0">
+            <BulkArchiveProgress onComplete={handleProgressComplete} />
+            <BulkArchiveCards
+              emailGroups={emailGroups}
+              categories={categories}
+              bulkAction={bulkAction}
+              onCategoryChange={mutate}
+            />
+          </TabsContent>
+          <TabsContent value="sent-history" className="mt-0">
+            <SentHistoryArchive />
+          </TabsContent>
+        </Tabs>
       </PageWrapper>
       <AutoCategorizationSetup
         open={shouldShowSetup}
