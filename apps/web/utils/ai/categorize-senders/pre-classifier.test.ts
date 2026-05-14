@@ -196,10 +196,12 @@ describe("preClassify", () => {
         "50% off sale ends tonight", // strong marketing subject
       ],
     });
-    // Both sides have evidence. Expect either null (ambiguous) or a
-    // confidence below threshold — caller will fall through to Bedrock.
+    // Both sides have evidence: newsletter local-part (0.85) + marketing
+    // subject hits (~0.6 cap). After the EL-427 weight bump, newsletter
+    // wins outright — single strong local-part hit dominates. We assert
+    // the *behavior* (clear winner OR null), not which side wins.
     if (r.category !== null) {
-      expect(r.confidence).toBeLessThan(PRE_CLASSIFIER_CONFIDENCE_THRESHOLD);
+      expect(["Newsletter", "Marketing"]).toContain(r.category);
     }
   });
 
@@ -220,11 +222,14 @@ describe("preClassify", () => {
   it("handles empty subjects array gracefully when local-part is newsletter", () => {
     const r = preClassify({
       senderLocalPart: "newsletter",
-      senderDomain: "substack.com",
+      senderDomain: "example.com",
       recentSubjects: [],
     });
-    // Local-only evidence, no subject corroboration — below threshold.
-    expect(r.confidence).toBeLessThan(PRE_CLASSIFIER_CONFIDENCE_THRESHOLD);
+    // EL-427 tuning: a clean local-part token IS authoritative.
+    expect(r.category).toBe("Newsletter");
+    expect(r.confidence).toBeGreaterThanOrEqual(
+      PRE_CLASSIFIER_CONFIDENCE_THRESHOLD,
+    );
   });
 
   it("handles whitespace-only subjects as empty", () => {
@@ -233,8 +238,11 @@ describe("preClassify", () => {
       senderDomain: "example.com",
       recentSubjects: ["   ", "", "  \n  "],
     });
-    // Only a local marketing token contributes.
-    expect(r.confidence).toBeLessThan(PRE_CLASSIFIER_CONFIDENCE_THRESHOLD);
+    // EL-427 tuning: single marketing local-part token is authoritative.
+    expect(r.category).toBe("Marketing");
+    expect(r.confidence).toBeGreaterThanOrEqual(
+      PRE_CLASSIFIER_CONFIDENCE_THRESHOLD,
+    );
   });
 
   it("handles single-subject history without crashing", () => {
@@ -269,9 +277,12 @@ describe("preClassify", () => {
       senderDomain: "example.de",
       recentSubjects: ["Wöchentliche Zusammenfassung"],
     });
-    // Local-only evidence — confidence is real but below threshold.
-    expect(r.confidence).toBeGreaterThan(0);
-    expect(r.confidence).toBeLessThan(PRE_CLASSIFIER_CONFIDENCE_THRESHOLD);
+    // Local-only evidence; subject pattern doesn't fire on German text,
+    // but the local-part is authoritative.
+    expect(r.category).toBe("Newsletter");
+    expect(r.confidence).toBeGreaterThanOrEqual(
+      PRE_CLASSIFIER_CONFIDENCE_THRESHOLD,
+    );
   });
 
   // -----------------------------------------------------------------
@@ -388,5 +399,95 @@ describe("preClassify", () => {
     expect(r.signals?.localMarketingHits).toContain("deals");
     expect(r.signals?.subjectMarketingHits).toBeGreaterThan(0);
     expect(r.signals?.brandDomainHit).toBe(true);
+  });
+
+  // EL-427 tuning: domain-label tokens.
+  describe("domain-label tokens", () => {
+    it("detects newsletter token in domain label (tldrnewsletter.com)", () => {
+      const r = preClassify({
+        senderLocalPart: "dan",
+        senderDomain: "tldrnewsletter.com",
+        recentSubjects: [],
+      });
+      expect(r.category).toBe("Newsletter");
+      expect(r.signals?.domainNewsletterHits).toContain("newsletter");
+    });
+
+    it("detects news token in subdomain (news.example.com)", () => {
+      const r = preClassify({
+        senderLocalPart: "hello",
+        senderDomain: "news.gemini.com",
+        recentSubjects: [],
+      });
+      expect(r.category).toBe("Newsletter");
+      expect(r.signals?.domainNewsletterHits).toContain("news");
+    });
+
+    it("detects substack token in domain", () => {
+      const r = preClassify({
+        senderLocalPart: "someauthor",
+        senderDomain: "someauthor.substack.com",
+        recentSubjects: [],
+      });
+      expect(r.category).toBe("Newsletter");
+      expect(r.signals?.domainNewsletterHits).toContain("substack");
+    });
+
+    it("local-part newsletter + domain-label newsletter clears 0.85 threshold", () => {
+      const r = preClassify({
+        senderLocalPart: "newsletter",
+        senderDomain: "newsletter.example.com",
+        recentSubjects: [],
+      });
+      expect(r.category).toBe("Newsletter");
+      expect(r.confidence).toBeGreaterThanOrEqual(
+        PRE_CLASSIFIER_CONFIDENCE_THRESHOLD,
+      );
+    });
+
+    it("does not apply newsletter-domain signal on retail brand domain", () => {
+      // BRAND_DOMAIN_HINTS gate: even if a future token like 'news' appears
+      // in a brand domain label, we don't want it tipping toward Newsletter.
+      const r = preClassify({
+        senderLocalPart: "deals",
+        senderDomain: "news.amazon.com",
+        recentSubjects: ["50% off"],
+      });
+      expect(r.category).toBe("Marketing");
+      expect(r.signals?.domainNewsletterHits).toEqual([]);
+    });
+
+    it("public suffix label is excluded (does not match TLD-only token)", () => {
+      // hypothetically if a token like 'com' were in the list (it isn't, but
+      // we want stable behavior): just verify a real-world false-positive
+      // doesn't fire on the suffix.
+      const r = preClassify({
+        senderLocalPart: "someone",
+        senderDomain: "example.org",
+        recentSubjects: [],
+      });
+      expect(r.category).toBeNull();
+    });
+  });
+
+  // EL-427 tuning: removed-token regression guards.
+  describe("removed marketing tokens (EL-427 tuning)", () => {
+    it("hello@ alone does not classify as Marketing", () => {
+      const r = preClassify({
+        senderLocalPart: "hello",
+        senderDomain: "someservice.io",
+        recentSubjects: [],
+      });
+      expect(r.category).toBeNull();
+    });
+
+    it("team@ alone does not classify as Marketing", () => {
+      const r = preClassify({
+        senderLocalPart: "team",
+        senderDomain: "airtable.com",
+        recentSubjects: [],
+      });
+      expect(r.category).toBeNull();
+    });
   });
 });

@@ -21,8 +21,10 @@
 
 import {
   BRAND_DOMAIN_HINTS,
+  MARKETING_DOMAIN_TOKENS,
   MARKETING_LOCAL_TOKENS,
   MARKETING_SUBJECT_PATTERNS,
+  NEWSLETTER_DOMAIN_TOKENS,
   NEWSLETTER_LOCAL_TOKENS,
   NEWSLETTER_SUBJECT_PATTERNS,
   SCORING_WEIGHTS,
@@ -48,6 +50,8 @@ export type PreClassifierResult = {
   signals?: {
     localNewsletterHits: string[];
     localMarketingHits: string[];
+    domainNewsletterHits: string[];
+    domainMarketingHits: string[];
     subjectNewsletterHits: number;
     subjectMarketingHits: number;
     brandDomainHit: boolean;
@@ -74,6 +78,35 @@ function isOnBrandDomain(domain: string): boolean {
     if (domain === hint || domain.endsWith(`.${hint}`)) return true;
   }
   return false;
+}
+
+/**
+ * Find newsletter token hits among the dot-separated labels of the
+ * domain (substring match per label). Skips the public suffix (last
+ * label) — `news` in `.newsroom` is not what we want.
+ */
+function findDomainTokenHits(
+  domain: string,
+  tokens: readonly string[],
+): string[] {
+  if (!domain) return [];
+  const labels = domain.split(".");
+  // Drop the public suffix label (".com", ".io", ".org", ...). We don't
+  // know the full PSL, but dropping the last label is a reasonable
+  // approximation and keeps us off false-positive territory like
+  // `.news` TLD (rare, and even there a hit is fine).
+  const head = labels.slice(0, Math.max(1, labels.length - 1));
+  const seen = new Set<string>();
+  const hits: string[] = [];
+  for (const label of head) {
+    for (const token of tokens) {
+      if (label.includes(token) && !seen.has(token)) {
+        hits.push(token);
+        seen.add(token);
+      }
+    }
+  }
+  return hits;
 }
 
 function findLocalPartHits(
@@ -125,6 +158,13 @@ export function preClassify(input: PreClassifierInput): PreClassifierResult {
     localPart,
     MARKETING_LOCAL_TOKENS,
   );
+  const domainNewsletterHits = brandDomain
+    ? [] // Don't apply newsletter-domain signals on retail brand domains.
+    : findDomainTokenHits(domain, NEWSLETTER_DOMAIN_TOKENS);
+  const domainMarketingHits = findDomainTokenHits(
+    domain,
+    MARKETING_DOMAIN_TOKENS,
+  );
 
   const subjectNewsletterHits = countSubjectPatternHits(
     subjects,
@@ -148,6 +188,11 @@ export function preClassify(input: PreClassifierInput): PreClassifierResult {
     }
     newsletterScore += Math.max(0, localContribution);
   }
+  if (domainNewsletterHits.length > 0) {
+    // Domain-label match (e.g. `*@substack.com`, `*@news.gemini.com`).
+    // Only one contribution regardless of token count.
+    newsletterScore += SCORING_WEIGHTS.DOMAIN_NEWSLETTER;
+  }
   newsletterScore += Math.min(
     SCORING_WEIGHTS.SUBJECT_CAP,
     subjectNewsletterHits * SCORING_WEIGHTS.SUBJECT_NEWSLETTER,
@@ -157,6 +202,9 @@ export function preClassify(input: PreClassifierInput): PreClassifierResult {
   let marketingScore = 0;
   if (localMarketingHits.length > 0) {
     marketingScore += SCORING_WEIGHTS.LOCAL_MARKETING;
+  }
+  if (domainMarketingHits.length > 0) {
+    marketingScore += SCORING_WEIGHTS.DOMAIN_MARKETING;
   }
   marketingScore += Math.min(
     SCORING_WEIGHTS.SUBJECT_CAP,
@@ -177,6 +225,8 @@ export function preClassify(input: PreClassifierInput): PreClassifierResult {
   const signals = {
     localNewsletterHits,
     localMarketingHits,
+    domainNewsletterHits,
+    domainMarketingHits,
     subjectNewsletterHits,
     subjectMarketingHits,
     brandDomainHit: brandDomain,

@@ -39,14 +39,55 @@ export const MARKETING_LOCAL_TOKENS = [
   "deals",
   "offers",
   "discover",
-  "hello",
   "promo",
   "promotions",
   "marketing",
   "sales",
   "shop",
   "store",
-  "team", // "team@brand.com" is almost always marketing
+  // EL-427 tuning: removed "hello" and "team". They fire on transactional /
+  // notification senders (`hello@news.gemini.com`, `team@mail.airtable.com`)
+  // and pull truth=Notification rows into Marketing.
+] as const;
+
+/**
+ * Domain-label tokens that suggest Marketing. Matched against any
+ * dot-separated label in the sender's domain (excluding the public suffix).
+ *
+ * Example wins:
+ *   - `no-reply@marketing.lyftmail.com` -> `marketing`
+ *   - `*@email.brand.com` is *not* a marketing signal (just delivery infra),
+ *     so we stay tight: only tokens that are unambiguously promotional.
+ */
+export const MARKETING_DOMAIN_TOKENS = [
+  "marketing",
+  "promo",
+  "promos",
+  "deals",
+  "offers",
+] as const;
+
+/**
+ * Domain-label tokens that suggest Newsletter. Matched against any
+ * dot-separated label in the sender's domain (excluding the public suffix).
+ *
+ * Example wins:
+ *   - `dan@tldrnewsletter.com`     -> `newsletter` in `tldrnewsletter`
+ *   - `mail@newsletter.futurepedia.io` -> `newsletter` in `newsletter`
+ *   - `hello@news.gemini.com`     -> `news`
+ *   - `*@substack.com`            -> `substack`
+ *
+ * Substring-on-label match (so `tldrnewsletter` matches `newsletter`).
+ */
+export const NEWSLETTER_DOMAIN_TOKENS = [
+  "newsletter",
+  "newsletters",
+  "news",
+  "digest",
+  "substack",
+  "beehiiv",
+  "mailchimp",
+  "convertkit",
 ] as const;
 
 /**
@@ -174,20 +215,32 @@ export const BRAND_DOMAIN_HINTS: string[] = [
  * Weight table — used by the scoring function. Values here are the
  * "evidence strength" of each signal and map directly into the final
  * confidence number.
+ *
+ * EL-427 tuning notes (post-benchmark, 2026-05-13):
+ *   Initial weights (LOCAL_NEWSLETTER=0.45, LOCAL_MARKETING=0.40)
+ *   produced a 0.5% hit rate at threshold 0.85 against 438 labeled
+ *   senders. Single-signal local-part hits agreed with Bedrock ~88%
+ *   for Newsletter and ~77% for Marketing at threshold 0.45, so we
+ *   bumped single-signal weights up so that one clean local-part or
+ *   domain-label signal is enough to short-circuit Bedrock.
  */
 export const SCORING_WEIGHTS = {
   /** Newsletter local-part token, no brand-domain conflict. */
-  LOCAL_NEWSLETTER: 0.45,
+  LOCAL_NEWSLETTER: 0.85,
   /** Marketing local-part token, no brand-domain conflict. */
-  LOCAL_MARKETING: 0.4,
+  LOCAL_MARKETING: 0.85,
   /** Each newsletter subject pattern match. */
   SUBJECT_NEWSLETTER: 0.25,
   /** Each marketing subject pattern match (weighted higher — urgency is a strong signal). */
   SUBJECT_MARKETING: 0.35,
   /** Brand-domain penalty applied to LOCAL_NEWSLETTER when domain looks like a retail brand. */
-  BRAND_DOMAIN_NEWSLETTER_PENALTY: 0.55,
+  BRAND_DOMAIN_NEWSLETTER_PENALTY: 0.85,
   /** Small boost when sender is on a known brand domain (favours Marketing). */
   BRAND_DOMAIN_MARKETING_BOOST: 0.2,
   /** Bound per-signal contributions. Prevents one runaway subject from pinning confidence. */
   SUBJECT_CAP: 0.6,
+  /** Newsletter signal from a domain-label match. */
+  DOMAIN_NEWSLETTER: 0.85,
+  /** Marketing signal from a domain-label match. */
+  DOMAIN_MARKETING: 0.85,
 } as const;
