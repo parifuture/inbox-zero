@@ -11,7 +11,9 @@ const querySchema = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
   limit: z.coerce.number().int().min(1).max(500).default(50),
   offset: z.coerce.number().int().min(0).default(0),
-  status: z.enum(["active", "archived", "skipped", "all"]).default("active"),
+  status: z
+    .enum(["active", "archived", "skipped", "deleted", "all"])
+    .default("active"),
 });
 
 export type HistoricalSendersQuery = z.infer<typeof querySchema>;
@@ -26,6 +28,7 @@ export type HistoricalSenderItem = {
   lastDate: string;
   archivedAt: string | null;
   skippedAt: string | null;
+  deletedAt: string | null;
 };
 
 export type HistoricalSendersResponse = {
@@ -46,12 +49,16 @@ function buildWhere(
     case "active":
       where.archivedAt = null;
       where.skippedAt = null;
+      where.deletedAt = null;
       break;
     case "archived":
       where.archivedAt = { not: null };
       break;
     case "skipped":
       where.skippedAt = { not: null };
+      break;
+    case "deleted":
+      where.deletedAt = { not: null };
       break;
     case "all":
       break;
@@ -99,6 +106,7 @@ export const GET = withEmailAccount(
         lastDate: s.lastDate.toISOString(),
         archivedAt: s.archivedAt?.toISOString() ?? null,
         skippedAt: s.skippedAt?.toISOString() ?? null,
+        deletedAt: s.deletedAt?.toISOString() ?? null,
       })),
       total,
     };

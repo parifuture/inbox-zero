@@ -13,6 +13,16 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -89,14 +99,19 @@ function LabelStateBadge({
 export function SenderDetail({
   sender,
   onArchive,
+  onDelete,
   isArchiving,
+  isDeleting,
 }: {
   sender: Sender | null;
   onArchive: (senderEmails: string[]) => void;
+  onDelete: (senderEmails: string[]) => void;
   isArchiving: boolean;
+  isDeleting: boolean;
 }) {
   const [bypassCache, setBypassCache] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [accumulated, setAccumulated] = useState<
     {
       id: string;
@@ -213,8 +228,54 @@ export function SenderDetail({
             <ArchiveIcon className="size-4 mr-2" />
             Archive all
           </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              if (sender.count >= 10) {
+                setConfirmDeleteOpen(true);
+              } else {
+                onDelete([sender.senderEmail]);
+              }
+            }}
+            disabled={isDeleting}
+            title="Move all of this sender's emails to Trash. Recoverable for 30 days in Gmail."
+          >
+            <Trash2Icon className="size-4 mr-2" />
+            Delete
+          </Button>
         </div>
       </div>
+
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Move {sender.count.toLocaleString()} emails to Trash?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will move every email from{" "}
+              <span className="font-mono">{sender.senderEmail}</span> to Gmail
+              Trash. Gmail keeps trashed mail for 30 days, so you can recover
+              anything by going to Gmail → Trash. Sent and starred emails are
+              never touched.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmDeleteOpen(false);
+                onDelete([sender.senderEmail]);
+              }}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Move to Trash
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {data?.partial ? (
         <div className="px-4 py-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-950/40 border-b flex items-center gap-2">

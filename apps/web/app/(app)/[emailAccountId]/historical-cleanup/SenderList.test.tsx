@@ -26,6 +26,7 @@ const baseSender = (overrides: Partial<Sender> = {}): Sender => ({
   lastDate: "2023-12-31T00:00:00.000Z",
   archivedAt: null,
   skippedAt: null,
+  deletedAt: null,
   ...overrides,
 });
 
@@ -50,6 +51,7 @@ function renderList(overrides?: Partial<Parameters<typeof SenderList>[0]>) {
     onSelectRow: vi.fn(),
     onArchive: vi.fn(),
     onSkip: vi.fn(),
+    onDelete: vi.fn(),
     ...overrides,
   };
   render(<SenderList {...props} />);

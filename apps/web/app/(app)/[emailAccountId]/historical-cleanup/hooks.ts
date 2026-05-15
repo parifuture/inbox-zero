@@ -10,6 +10,7 @@ import type {
 import type { HistoricalScanResponse } from "@/app/api/historical-senders/scan/route";
 import type { HistoricalSenderMessagesResponse } from "@/app/api/historical-senders/[senderEmail]/messages/route";
 import type { HistoricalSendersArchiveResponse } from "@/app/api/historical-senders/archive/route";
+import type { HistoricalSendersDeleteResponse } from "@/app/api/historical-senders/delete/route";
 import type { HistoricalSendersSkipResponse } from "@/app/api/historical-senders/skip/route";
 import { fetchWithAccount } from "@/utils/fetch";
 import { useAccount } from "@/providers/EmailAccountProvider";
@@ -193,3 +194,46 @@ export function useSkipSenders() {
 }
 
 export type { HistoricalSenderItem };
+
+export function useDeleteSenders() {
+  const { emailAccountId } = useAccount();
+
+  return useCallback(
+    async (senderEmails: string[]) => {
+      if (senderEmails.length === 0) return null;
+      const promise = (async () => {
+        const res = await fetchWithAccount({
+          url: "/api/historical-senders/delete",
+          emailAccountId,
+          init: {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ senderEmails }),
+          },
+        });
+        return jsonOrThrow<HistoricalSendersDeleteResponse>(res);
+      })();
+
+      toast.promise(promise, {
+        loading: `Moving ${senderEmails.length} sender${
+          senderEmails.length === 1 ? "" : "s"
+        } to Trash\u2026`,
+        success: (data) => {
+          const total = data.trashed.reduce((acc, s) => acc + s.count, 0);
+          return `Moved ${total} email${total === 1 ? "" : "s"} to Trash (recoverable for 30 days)`;
+        },
+        error: (err) =>
+          err instanceof Error
+            ? err.message
+            : "Failed to move senders to Trash",
+      });
+
+      try {
+        return await promise;
+      } catch {
+        return null;
+      }
+    },
+    [emailAccountId],
+  );
+}
