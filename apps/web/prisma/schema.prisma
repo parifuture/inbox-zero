@@ -1769,12 +1769,14 @@ model HistoricalSender {
   category       String?
   archivedAt     DateTime?
   skippedAt      DateTime?
+  deletedAt      DateTime?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
   @@unique([emailAccountId, senderEmail])
   @@index([emailAccountId, count])
   @@index([emailAccountId, lastDate])
+  @@index([emailAccountId, deletedAt])
 }
 
 // EL-358 — shadow-mode parity classifier output. One row per message the

@@ -7,6 +7,7 @@ import {
   MoreHorizontalIcon,
   SearchIcon,
   SkipForwardIcon,
+  Trash2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ const STATUS_FILTERS: { value: SenderStatusFilter; label: string }[] = [
   { value: "active", label: "Active" },
   { value: "archived", label: "Archived" },
   { value: "skipped", label: "Skipped" },
+  { value: "deleted", label: "Trashed" },
   { value: "all", label: "All" },
 ];
 
@@ -86,6 +88,7 @@ export function SenderList({
   onSelectRow,
   onArchive,
   onSkip,
+  onDelete,
   emptyMessage,
 }: {
   senders: Sender[];
@@ -108,6 +111,7 @@ export function SenderList({
   onSelectRow: (sender: Sender) => void;
   onArchive: (senderEmails: string[]) => void;
   onSkip: (senderEmails: string[]) => void;
+  onDelete: (senderEmails: string[]) => void;
   emptyMessage?: string;
 }) {
   const [searchInput, setSearchInput] = useState(search);
@@ -245,6 +249,14 @@ export function SenderList({
                           {sender.skippedAt ? (
                             <Badge variant="outline">Skipped</Badge>
                           ) : null}
+                          {sender.deletedAt ? (
+                            <Badge
+                              variant="outline"
+                              className="text-destructive border-destructive/40"
+                            >
+                              Trashed
+                            </Badge>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
@@ -283,6 +295,13 @@ export function SenderList({
                             >
                               <SkipForwardIcon className="size-4 mr-2" />
                               Skip
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onDelete([sender.senderEmail])}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2Icon className="size-4 mr-2" />
+                              Delete (move to Trash)
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>

@@ -16,6 +16,7 @@ describe("BulkActionsBar (EL-323 confirmation modal)", () => {
         selectedSenders={[]}
         onArchive={() => {}}
         onSkip={() => {}}
+        onDelete={() => {}}
         onClear={() => {}}
         isWorking={false}
       />,
@@ -32,6 +33,7 @@ describe("BulkActionsBar (EL-323 confirmation modal)", () => {
         ]}
         onArchive={() => {}}
         onSkip={() => {}}
+        onDelete={() => {}}
         onClear={() => {}}
         isWorking={false}
       />,
@@ -50,6 +52,7 @@ describe("BulkActionsBar (EL-323 confirmation modal)", () => {
         selectedSenders={[{ senderEmail: "a@x.com", count: 4 }]}
         onArchive={onArchive}
         onSkip={() => {}}
+        onDelete={() => {}}
         onClear={() => {}}
         isWorking={false}
       />,
@@ -78,6 +81,7 @@ describe("BulkActionsBar (EL-323 confirmation modal)", () => {
         selectedSenders={[{ senderEmail: "a@x.com", count: 4 }]}
         onArchive={onArchive}
         onSkip={() => {}}
+        onDelete={() => {}}
         onClear={() => {}}
         isWorking={false}
       />,
@@ -97,6 +101,7 @@ describe("BulkActionsBar (EL-323 confirmation modal)", () => {
         selectedSenders={senders}
         onArchive={() => {}}
         onSkip={() => {}}
+        onDelete={() => {}}
         onClear={() => {}}
         isWorking={false}
       />,

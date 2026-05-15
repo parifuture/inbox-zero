@@ -10,6 +10,7 @@ import { SenderDetail } from "./SenderDetail";
 import { BulkActionsBar } from "./BulkActionsBar";
 import {
   useArchiveSenders,
+  useDeleteSenders,
   useHistoricalSenders,
   useSkipSenders,
 } from "./hooks";
@@ -41,6 +42,10 @@ const HOTKEY_HELP: HotkeyHelpGroup[] = [
     entries: [
       { keys: "x", description: "Archive focused sender's emails" },
       { keys: "e", description: "Skip focused sender (mark as handled)" },
+      {
+        keys: "d",
+        description: "Delete (move to Trash, recoverable for 30 days)",
+      },
       { keys: "?", description: "Toggle this help overlay" },
     ],
   },
@@ -78,6 +83,7 @@ export function HistoricalCleanup() {
 
   const archiveSenders = useArchiveSenders();
   const skipSenders = useSkipSenders();
+  const deleteSenders = useDeleteSenders();
 
   const onToggleRow = useCallback((email: string) => {
     setSelectedRows((prev) => {
@@ -141,6 +147,25 @@ export function HistoricalCleanup() {
     [skipSenders, mutate],
   );
 
+  const handleDelete = useCallback(
+    async (senderEmails: string[]) => {
+      if (senderEmails.length === 0) return;
+      setIsWorking(true);
+      try {
+        await deleteSenders(senderEmails);
+        setSelectedRows((prev) => {
+          const next = new Set(prev);
+          for (const e of senderEmails) next.delete(e);
+          return next;
+        });
+        await mutate();
+      } finally {
+        setIsWorking(false);
+      }
+    },
+    [deleteSenders, mutate],
+  );
+
   const onScanCompleted = useCallback(() => {
     mutate();
   }, [mutate]);
@@ -201,6 +226,9 @@ export function HistoricalCleanup() {
       e: () => {
         if (selectedRow) handleSkip([selectedRow.senderEmail]);
       },
+      d: () => {
+        if (selectedRow) handleDelete([selectedRow.senderEmail]);
+      },
     },
     { enabled: !helpOpen },
   );
@@ -240,6 +268,7 @@ export function HistoricalCleanup() {
               onSelectRow={setSelectedRow}
               onArchive={handleArchive}
               onSkip={handleSkip}
+              onDelete={handleDelete}
               emptyMessage={
                 total === 0 && status === "active" && !search
                   ? "Run a scan to discover senders from before Jan 1 2024."
@@ -251,7 +280,9 @@ export function HistoricalCleanup() {
             <SenderDetail
               sender={selectedRow}
               onArchive={handleArchive}
+              onDelete={handleDelete}
               isArchiving={isWorking}
+              isDeleting={isWorking}
             />
           </div>
         </div>
@@ -261,6 +292,7 @@ export function HistoricalCleanup() {
         selectedSenders={selectedSenders}
         onArchive={() => handleArchive(Array.from(selectedRows))}
         onSkip={() => handleSkip(Array.from(selectedRows))}
+        onDelete={() => handleDelete(Array.from(selectedRows))}
         onClear={() => setSelectedRows(new Set())}
         isWorking={isWorking}
       />

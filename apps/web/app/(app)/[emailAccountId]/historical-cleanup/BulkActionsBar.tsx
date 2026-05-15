@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArchiveIcon, SkipForwardIcon, XIcon } from "lucide-react";
+import { ArchiveIcon, SkipForwardIcon, Trash2Icon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,16 +21,19 @@ export function BulkActionsBar({
   selectedSenders,
   onArchive,
   onSkip,
+  onDelete,
   onClear,
   isWorking,
 }: {
   selectedSenders: SelectedSenderSummary[];
   onArchive: () => void;
   onSkip: () => void;
+  onDelete: () => void;
   onClear: () => void;
   isWorking: boolean;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const selectedCount = selectedSenders.length;
 
   if (selectedCount === 0) return null;
@@ -70,6 +73,15 @@ export function BulkActionsBar({
           >
             <SkipForwardIcon className="size-4 mr-2" />
             Skip Selected
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => setConfirmDeleteOpen(true)}
+            disabled={isWorking}
+          >
+            <Trash2Icon className="size-4 mr-2" />
+            Delete Selected ({selectedCount})
           </Button>
           <Button variant="ghost" size="sm" onClick={onClear}>
             <XIcon className="size-4 mr-1" />
@@ -135,6 +147,69 @@ export function BulkActionsBar({
               disabled={isWorking}
             >
               Archive {totalThreads} thread{totalThreads === 1 ? "" : "s"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Move ~{totalThreads} thread{totalThreads === 1 ? "" : "s"} to
+              Trash?
+            </DialogTitle>
+            <DialogDescription>
+              You're about to send every email matching{" "}
+              <code>from:&lt;sender&gt; before:2024/01/01</code> for the{" "}
+              {selectedCount} selected sender{selectedCount === 1 ? "" : "s"} to
+              Gmail Trash. Gmail keeps trashed mail for 30 days, so you can
+              recover anything by going to Gmail → Trash. Sent and starred
+              emails are never touched.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="mt-2">
+            <div className="text-xs text-muted-foreground mb-1">
+              Sample senders:
+            </div>
+            <ul className="text-xs font-mono space-y-0.5 max-h-40 overflow-auto border rounded p-2 bg-muted/30">
+              {samples.map((s) => (
+                <li
+                  key={s.senderEmail}
+                  className="flex items-center justify-between gap-2"
+                >
+                  <span className="truncate">{s.senderEmail}</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {s.count} thread{s.count === 1 ? "" : "s"}
+                  </span>
+                </li>
+              ))}
+              {remaining > 0 ? (
+                <li className="text-muted-foreground italic">
+                  …and {remaining} more
+                </li>
+              ) : null}
+            </ul>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setConfirmDeleteOpen(false)}
+              disabled={isWorking}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmDeleteOpen(false);
+                onDelete();
+              }}
+              disabled={isWorking}
+            >
+              Move {totalThreads} thread{totalThreads === 1 ? "" : "s"} to Trash
             </Button>
           </DialogFooter>
         </DialogContent>
