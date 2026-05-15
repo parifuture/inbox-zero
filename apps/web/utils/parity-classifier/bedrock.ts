@@ -111,7 +111,7 @@ export async function classifyEmailForParity(
       emailAccount,
       label: "parity-classifier/stage4",
       modelOptions,
-      promptHardening: { trust: "untrusted" },
+      promptHardening: { trust: "untrusted", level: "full" },
     });
 
     const result = await generateObject({
