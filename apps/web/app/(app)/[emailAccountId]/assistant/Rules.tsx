@@ -10,6 +10,7 @@ import {
   Trash2Icon,
   SparklesIcon,
   CopyIcon,
+  LockIcon,
 } from "lucide-react";
 import { useMemo } from "react";
 import { LoadingContent } from "@/components/LoadingContent";
@@ -221,7 +222,16 @@ export function Rules({
                         />
                       </TableCell>
                       <TableCell className="font-medium p-2 sm:p-4">
-                        {rule.name}
+                        <span className="inline-flex items-center gap-1.5">
+                          {rule.lockedToSenderId && (
+                            <LockIcon
+                              className="size-3.5 text-muted-foreground shrink-0"
+                              aria-label={`Sender-locked rule for ${rule.lockedToSenderId}`}
+                              data-testid="sender-lock-indicator"
+                            />
+                          )}
+                          {rule.name}
+                        </span>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell p-2 sm:p-4">
                         <TruncatedTooltipText
@@ -255,28 +265,55 @@ export function Rules({
                               align="end"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  ruleDialog.onOpen({
-                                    ruleId: rule.id,
-                                    editMode: true,
-                                  });
-                                }}
-                              >
-                                <PenIcon className="mr-2 size-4" />
-                                Edit manually
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => {
-                                  setInput(
-                                    `I'd like to edit the "${rule.name}" rule:\n`,
-                                  );
-                                  setOpen((arr) => [...arr, "chat-sidebar"]);
-                                }}
-                              >
-                                <SparklesIcon className="mr-2 size-4" />
-                                Edit via AI
-                              </DropdownMenuItem>
+                              {rule.lockedToSenderId ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={prefixPath(
+                                      emailAccountId,
+                                      `/historical-cleanup?sender=${encodeURIComponent(
+                                        rule.lockedToSenderId,
+                                      )}&openChat=true`,
+                                    )}
+                                    data-testid="sender-locked-edit-link"
+                                  >
+                                    <span
+                                      title="This rule was created via per-sender chat. To change its scope, edit there or delete the rule."
+                                      className="inline-flex items-center"
+                                    >
+                                      <LockIcon className="mr-2 size-4" />
+                                      Edit in {rule.lockedToSenderId} chat
+                                    </span>
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      ruleDialog.onOpen({
+                                        ruleId: rule.id,
+                                        editMode: true,
+                                      });
+                                    }}
+                                  >
+                                    <PenIcon className="mr-2 size-4" />
+                                    Edit manually
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setInput(
+                                        `I'd like to edit the "${rule.name}" rule:\n`,
+                                      );
+                                      setOpen((arr) => [
+                                        ...arr,
+                                        "chat-sidebar",
+                                      ]);
+                                    }}
+                                  >
+                                    <SparklesIcon className="mr-2 size-4" />
+                                    Edit via AI
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                               <DropdownMenuItem
                                 onClick={() => {
                                   ruleDialog.onOpen({
