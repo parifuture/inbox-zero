@@ -8,6 +8,7 @@ import { getMessages } from "@/utils/gmail/message";
 import { GmailLabel } from "@/utils/gmail/label";
 import { runGmailOp } from "@/utils/gmail/errors";
 import { buildArchiveQuery } from "@/app/api/historical-senders/scan-runner";
+import { getKillSwitchStatus } from "@/utils/kill-switch";
 import prisma from "@/utils/prisma";
 
 // EL-438 — Move-to-Trash for Historical Cleanup.
@@ -28,6 +29,7 @@ const bodySchema = z.object({
 
 export type HistoricalSendersDeleteResponse = {
   trashed: { senderEmail: string; count: number }[];
+  killSwitchPaused?: boolean;
 };
 
 const BATCH_MODIFY_CHUNK_SIZE = 1000;
@@ -46,6 +48,21 @@ export const POST = withEmailProvider(
     }
 
     const body = bodySchema.parse(await request.json());
+
+    // EL-370 kill-switch — refuse to trash when autonomous actions are
+    // paused. Delete is the largest blast-radius human-driven action; it must
+    // respect the same pause as autonomous flows. Recovery (undo) remains
+    // available even when paused.
+    const killSwitch = await getKillSwitchStatus(emailAccountId).catch(() => ({
+      paused: false,
+    }));
+    if (killSwitch.paused) {
+      return NextResponse.json<HistoricalSendersDeleteResponse>(
+        { trashed: [], killSwitchPaused: true },
+        { status: 200 },
+      );
+    }
+
     const gmail = await getGmailClientForEmail({ emailAccountId, logger });
 
     const trashed: { senderEmail: string; count: number }[] = [];

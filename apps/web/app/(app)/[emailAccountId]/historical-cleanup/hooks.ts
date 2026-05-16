@@ -137,6 +137,9 @@ export function useArchiveSenders() {
           senderEmails.length === 1 ? "" : "s"
         }…`,
         success: (data) => {
+          if (data.killSwitchPaused) {
+            return "Autonomous actions paused — unpause from the kill-switch banner to retry.";
+          }
           const total = data.archived.reduce((acc, s) => acc + s.count, 0);
           return `Archived ${total} email${total === 1 ? "" : "s"}`;
         },
@@ -219,6 +222,9 @@ export function useDeleteSenders() {
           senderEmails.length === 1 ? "" : "s"
         } to Trash\u2026`,
         success: (data) => {
+          if (data.killSwitchPaused) {
+            return "Autonomous actions paused — unpause from the kill-switch banner to retry.";
+          }
           const total = data.trashed.reduce((acc, s) => acc + s.count, 0);
           return `Moved ${total} email${total === 1 ? "" : "s"} to Trash (recoverable for 30 days)`;
         },
