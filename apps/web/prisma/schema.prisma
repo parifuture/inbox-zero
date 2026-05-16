@@ -496,11 +496,18 @@ model Rule {
 
   promptText String? // natural language for this rule for prompt file. prompt file is combination of these fields
 
+  // EL-448 / EL-439: When non-null, this rule was created via the per-sender chat
+  // and is permanently locked to that sender. The `from` condition cannot be edited
+  // (only deleted entirely). Stored as a plain email string — there is no Sender model;
+  // senders are tracked elsewhere as freeform email strings (cf. SenderDecision).
+  lockedToSenderId String?
+
   history RuleHistory[]
 
   @@unique([id, emailAccountId])
   @@unique([name, emailAccountId])
   @@unique([emailAccountId, systemType])
+  @@index([lockedToSenderId])
 }
 
 model Action {
@@ -1027,13 +1034,20 @@ model Chat {
   compactionCount       Int  @default(0)
   lastSeenRulesRevision Int?
 
+  // EL-448 / EL-439: When non-null, this chat is the persistent per-sender thread for
+  // creating sender-locked rules. Each (emailAccount, senderEmail) pair has at most one chat.
+  // NULL for general-purpose chats — those keep existing behavior.
+  senderEmail String?
+
   messages       ChatMessage[]
   compactions    ChatCompaction[]
   memories       ChatMemory[]
   emailAccountId String
   emailAccount   EmailAccount     @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
 
+  @@unique([emailAccountId, senderEmail])
   @@index([emailAccountId])
+  @@index([senderEmail])
 }
 
 model ChatMessage {

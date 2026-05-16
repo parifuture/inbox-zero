@@ -976,6 +976,7 @@ function getRule(): Rule {
     promptText: null,
     categoryFilterType: null,
     systemType: null,
+    lockedToSenderId: null,
   };
 }
 
