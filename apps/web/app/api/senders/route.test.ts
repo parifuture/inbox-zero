@@ -50,10 +50,12 @@ vi.mock("@/utils/middleware", () => ({
 }));
 
 const batchModify = vi.fn(async () => ({}));
+// EL-459: trash via users.messages.trash, not batchModify+addLabelIds:[TRASH].
+const trashMessage = vi.fn(async () => ({}));
 
 vi.mock("@/utils/email-account-client", () => ({
   getGmailClientForEmail: vi.fn(async () => ({
-    users: { messages: { batchModify } },
+    users: { messages: { batchModify, trash: trashMessage } },
   })),
 }));
 
@@ -102,6 +104,7 @@ describe("POST /api/senders (EL-442 four-actions)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     batchModify.mockClear();
+    trashMessage.mockClear();
     getMessages.mockReset();
     getKillSwitchStatus.mockResolvedValue({ paused: false });
   });
@@ -170,16 +173,23 @@ describe("POST /api/senders (EL-442 four-actions)", () => {
       }),
     );
 
-    // Trash semantics: addLabelIds:[TRASH] + removeLabelIds:[INBOX]. NEVER
+    // EL-459: Trash semantics use users.messages.trash (per id), NOT
+    // batchModify+addLabelIds:[TRASH] (which is unreliable). NEVER
     // messages.delete (permanent).
-    expect(batchModify).toHaveBeenCalledWith({
+    expect(trashMessage).toHaveBeenCalledTimes(3);
+    expect(trashMessage).toHaveBeenNthCalledWith(1, {
       userId: "me",
-      requestBody: {
-        ids: ["m1", "m2", "m3"],
-        addLabelIds: ["TRASH"],
-        removeLabelIds: ["INBOX"],
-      },
+      id: "m1",
     });
+    expect(trashMessage).toHaveBeenNthCalledWith(2, {
+      userId: "me",
+      id: "m2",
+    });
+    expect(trashMessage).toHaveBeenNthCalledWith(3, {
+      userId: "me",
+      id: "m3",
+    });
+    expect(batchModify).not.toHaveBeenCalled();
   });
 
   it("custom_rule maps to review (placeholder until EL-439) and skips Gmail batchModify", async () => {

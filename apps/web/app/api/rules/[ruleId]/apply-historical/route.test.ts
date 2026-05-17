@@ -35,10 +35,12 @@ vi.mock("@/utils/middleware", () => ({
 }));
 
 const batchModify = vi.fn(async () => ({}));
+// EL-459: TRASH path uses gmail.users.messages.trash, not batchModify.
+const trashMessage = vi.fn(async () => ({}));
 
 vi.mock("@/utils/email-account-client", () => ({
   getGmailClientForEmail: vi.fn(async () => ({
-    users: { messages: { batchModify } },
+    users: { messages: { batchModify, trash: trashMessage } },
   })),
 }));
 
@@ -73,6 +75,7 @@ describe("POST /api/rules/[ruleId]/apply-historical (EL-454)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     batchModify.mockClear();
+    trashMessage.mockClear();
     getMessages.mockReset();
     getKillSwitchStatus.mockReset();
     getKillSwitchStatus.mockResolvedValue({ paused: false });
@@ -232,10 +235,11 @@ describe("POST /api/rules/[ruleId]/apply-historical (EL-454)", () => {
     );
   });
 
-  // EL-457: TRASH path — rules with the new TRASH action retroactively move
-  // historical mail to Gmail Trash (addLabelIds:[TRASH], removeLabelIds:
-  // [INBOX]). NEVER messages.delete.
-  it("trashes historical mail when rule has TRASH action", async () => {
+  // EL-457 + EL-459: TRASH path — rules with the new TRASH action
+  // retroactively move historical mail to Gmail Trash via
+  // users.messages.trash (NOT batchModify+addLabelIds:[TRASH], which is
+  // unreliable). NEVER messages.delete.
+  it("trashes historical mail via users.messages.trash when rule has TRASH action", async () => {
     prisma.rule.findUnique.mockResolvedValue({
       id: "r1",
       from: "service@paypal.com",
@@ -252,12 +256,17 @@ describe("POST /api/rules/[ruleId]/apply-historical (EL-454)", () => {
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ applied: true, archived: 0, trashed: 2 });
-    expect(batchModify).toHaveBeenCalledTimes(1);
-    const call = batchModify.mock.calls[0][0] as {
-      requestBody: { addLabelIds?: string[]; removeLabelIds: string[] };
-    };
-    expect(call.requestBody.addLabelIds).toEqual(["TRASH"]);
-    expect(call.requestBody.removeLabelIds).toEqual(["INBOX"]);
+    expect(trashMessage).toHaveBeenCalledTimes(2);
+    expect(trashMessage).toHaveBeenNthCalledWith(1, {
+      userId: "me",
+      id: "m1",
+    });
+    expect(trashMessage).toHaveBeenNthCalledWith(2, {
+      userId: "me",
+      id: "m2",
+    });
+    // batchModify must NOT be the trash path—that's the EL-459 bug.
+    expect(batchModify).not.toHaveBeenCalled();
   });
 
   it("prefers TRASH over ARCHIVE when the rule has both actions", async () => {
@@ -277,9 +286,8 @@ describe("POST /api/rules/[ruleId]/apply-historical (EL-454)", () => {
 
     expect(res.status).toBe(200);
     expect(json).toEqual({ applied: true, archived: 0, trashed: 1 });
-    const call = batchModify.mock.calls[0][0] as {
-      requestBody: { addLabelIds?: string[] };
-    };
-    expect(call.requestBody.addLabelIds).toEqual(["TRASH"]);
+    expect(trashMessage).toHaveBeenCalledTimes(1);
+    // ARCHIVE path (batchModify) should NOT fire when TRASH wins.
+    expect(batchModify).not.toHaveBeenCalled();
   });
 });

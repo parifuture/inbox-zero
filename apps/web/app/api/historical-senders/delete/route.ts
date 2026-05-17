@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import chunk from "lodash/chunk";
 import { withEmailProvider } from "@/utils/middleware";
 import { isGoogleProvider } from "@/utils/email/provider-types";
 import { getGmailClientForEmail } from "@/utils/email-account-client";
 import { getMessages } from "@/utils/gmail/message";
-import { GmailLabel } from "@/utils/gmail/label";
 import { runGmailOp } from "@/utils/gmail/errors";
 import { buildArchiveQuery } from "@/app/api/historical-senders/scan-runner";
 import { getKillSwitchStatus } from "@/utils/kill-switch";
@@ -31,8 +29,6 @@ export type HistoricalSendersDeleteResponse = {
   trashed: { senderEmail: string; count: number }[];
   killSwitchPaused?: boolean;
 };
-
-const BATCH_MODIFY_CHUNK_SIZE = 1000;
 
 export const POST = withEmailProvider(
   "historical-senders/delete",
@@ -79,27 +75,27 @@ export const POST = withEmailProvider(
           pageToken,
         });
 
-        const ids = messages.map((m) => m.id).filter(Boolean);
-        if (ids.length > 0) {
-          for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
-            await runGmailOp(
-              () =>
-                gmail.users.messages.batchModify({
-                  userId: "me",
-                  requestBody: {
-                    ids: slice,
-                    addLabelIds: [GmailLabel.TRASH],
-                    removeLabelIds: [GmailLabel.INBOX],
-                  },
-                }),
-              {
-                op: "batch_trash",
-                targetId: `sender:${senderEmail}:${slice.length}`,
-                downgradeNotFound: true,
-              },
-            );
-            trashedCount += slice.length;
-          }
+        // EL-459: Use users.messages.trash (the proper Gmail 'move to
+        // Trash' API) instead of batchModify+addLabelIds:[TRASH]. Adding the
+        // TRASH label via batchModify is unreliable — Gmail accepts the
+        // mutation but doesn't always actually move the message to Trash.
+        // messages.trash guarantees the message shows up in the user's
+        // Trash folder. NEVER call messages.delete (permanent).
+        for (const msg of messages) {
+          if (!msg.id) continue;
+          await runGmailOp(
+            () =>
+              gmail.users.messages.trash({
+                userId: "me",
+                id: msg.id!,
+              }),
+            {
+              op: "trash_message",
+              targetId: `sender:${senderEmail}:msg:${msg.id}`,
+              downgradeNotFound: true,
+            },
+          );
+          trashedCount += 1;
         }
 
         pageToken = nextPageToken;

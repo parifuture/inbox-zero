@@ -196,7 +196,32 @@ export async function runApplierSideEffects(params: {
     const batch = chunks[i];
 
     try {
-      if (deps.batchModify) {
+      // EL-459: When the planner is asking us to add the TRASH label, we
+      // CANNOT use batchModify+addLabelIds:[TRASH] — Gmail accepts the
+      // mutation but doesn't always actually move the message to Trash
+      // (it gets the label but never appears in the Trash folder). Use
+      // users.messages.trash instead, which is the canonical 'move to
+      // Trash' API. NEVER messages.delete.
+      const isTrashAdd = mutation.addLabelIds.includes(GmailLabel.TRASH);
+
+      if (isTrashAdd) {
+        for (const messageId of batch) {
+          await runGmailOp(
+            () =>
+              withGmailRetry(() =>
+                deps.gmail.users.messages.trash({
+                  userId: "me",
+                  id: messageId,
+                }),
+              ),
+            {
+              op: "trash_message",
+              targetId: `chunk:${i}:msg:${messageId}`,
+              logger,
+            },
+          );
+        }
+      } else if (deps.batchModify) {
         await deps.batchModify({ ids: batch, mutation });
       } else {
         await runGmailOp(

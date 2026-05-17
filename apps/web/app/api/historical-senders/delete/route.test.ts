@@ -28,11 +28,21 @@ vi.mock("@/utils/middleware", () => ({
       ),
 }));
 
-const batchModify = vi.fn(async () => ({}));
+// EL-459: route now uses gmail.users.messages.trash (the proper move-to-Trash
+// API) instead of batchModify+addLabelIds:[TRASH]. Adding the TRASH label via
+// batchModify is unreliable — Gmail accepts the mutation but doesn't always
+// actually move the message to Trash.
+const trashMessage = vi.fn(async () => ({}));
+const messagesDelete = vi.fn(async () => ({}));
 
 vi.mock("@/utils/email-account-client", () => ({
   getGmailClientForEmail: vi.fn(async () => ({
-    users: { messages: { batchModify } },
+    users: {
+      messages: {
+        trash: trashMessage,
+        // delete intentionally not exposed — Phase 1 invariant: never permanent.
+      },
+    },
   })),
 }));
 
@@ -64,17 +74,18 @@ function makeRequest(body: unknown, providerOverride?: { name: string }) {
   return req;
 }
 
-describe("POST /api/historical-senders/delete (EL-438)", () => {
+describe("POST /api/historical-senders/delete (EL-438 + EL-459)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    batchModify.mockClear();
+    trashMessage.mockClear();
+    messagesDelete.mockClear();
     getMessages.mockReset();
     getKillSwitchStatus.mockReset();
     getKillSwitchStatus.mockResolvedValue({ paused: false });
     prisma.historicalSender.update.mockResolvedValue({} as never);
   });
 
-  it("moves matched messages to Trash and updates deletedAt", async () => {
+  it("moves each matched message to Trash via users.messages.trash and updates deletedAt", async () => {
     getMessages.mockResolvedValueOnce({
       messages: [{ id: "m1" }, { id: "m2" }, { id: "m3" }],
       nextPageToken: undefined,
@@ -88,17 +99,22 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
       trashed: [{ senderEmail: "junk@spam.test", count: 3 }],
     });
 
-    // Critical: addLabelIds must include TRASH and removeLabelIds must include
-    // INBOX. We must NEVER call messages.delete (permanent delete).
-    expect(batchModify).toHaveBeenCalledTimes(1);
-    expect(batchModify).toHaveBeenCalledWith({
+    // EL-459 critical: must call users.messages.trash (the actual Trash
+    // API), one call per message id. NEVER messages.delete (permanent).
+    expect(trashMessage).toHaveBeenCalledTimes(3);
+    expect(trashMessage).toHaveBeenNthCalledWith(1, {
       userId: "me",
-      requestBody: {
-        ids: ["m1", "m2", "m3"],
-        addLabelIds: ["TRASH"],
-        removeLabelIds: ["INBOX"],
-      },
+      id: "m1",
     });
+    expect(trashMessage).toHaveBeenNthCalledWith(2, {
+      userId: "me",
+      id: "m2",
+    });
+    expect(trashMessage).toHaveBeenNthCalledWith(3, {
+      userId: "me",
+      id: "m3",
+    });
+    expect(messagesDelete).not.toHaveBeenCalled();
 
     expect(prisma.historicalSender.update).toHaveBeenCalledWith({
       where: {
@@ -115,28 +131,18 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
     });
   });
 
-  it("never invokes permanent delete (only batchModify)", async () => {
-    // Defence-in-depth check: even when the sender has matched messages,
-    // the route must never call gmail.users.messages.delete (permanent).
-    // We confirm by inspecting the gmail client — there is no `delete`
-    // method on the mocked client, so any reference would throw. We also
-    // assert batchModify is the only Gmail mutation invoked.
+  it("never invokes permanent delete (defence-in-depth)", async () => {
     getMessages.mockResolvedValueOnce({
       messages: [{ id: "only-1" }],
       nextPageToken: undefined,
     });
     const res = await POST(makeRequest({ senderEmails: ["safe@spam.test"] }));
     expect(res.status).toBe(200);
-    expect(batchModify).toHaveBeenCalledTimes(1);
-    // Belt-and-suspenders: the call we made was a label-mutation, not a
-    // permanent delete.
-    const call = batchModify.mock.calls[0][0] as {
-      requestBody: { addLabelIds: string[] };
-    };
-    expect(call.requestBody.addLabelIds).toContain("TRASH");
+    expect(trashMessage).toHaveBeenCalledTimes(1);
+    expect(messagesDelete).not.toHaveBeenCalled();
   });
 
-  it("paginates across multiple pages and chunks large id sets", async () => {
+  it("paginates across multiple pages and trashes every message", async () => {
     const firstPage = Array.from({ length: 1500 }, (_, i) => ({
       id: `m-page1-${i}`,
     }));
@@ -162,23 +168,16 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
       senderEmail: "bulk@spam.test",
       count: 1700,
     });
-    // 1500 → chunked into 1000 + 500 = 2 calls. 200 → 1 call. Total = 3.
-    expect(batchModify).toHaveBeenCalledTimes(3);
-    // Every call must use TRASH + INBOX semantics.
-    for (const call of batchModify.mock.calls) {
-      const reqBody = call[0] as {
-        requestBody: { addLabelIds: string[]; removeLabelIds: string[] };
-      };
-      expect(reqBody.requestBody.addLabelIds).toEqual(["TRASH"]);
-      expect(reqBody.requestBody.removeLabelIds).toEqual(["INBOX"]);
-    }
+    // EL-459: per-message API → exactly 1700 calls (one per id).
+    expect(trashMessage).toHaveBeenCalledTimes(1700);
+    expect(messagesDelete).not.toHaveBeenCalled();
   });
 
   it("rejects empty senderEmails (zod validation)", async () => {
     await expect(POST(makeRequest({ senderEmails: [] }))).rejects.toThrow(
       /Too small/,
     );
-    expect(batchModify).not.toHaveBeenCalled();
+    expect(trashMessage).not.toHaveBeenCalled();
   });
 
   it("short-circuits when EL-370 kill-switch is paused (no Gmail mutation)", async () => {
@@ -187,14 +186,12 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
     const json = await res.json();
     expect(res.status).toBe(200);
     expect(json).toEqual({ trashed: [], killSwitchPaused: true });
-    expect(batchModify).not.toHaveBeenCalled();
+    expect(trashMessage).not.toHaveBeenCalled();
     expect(getMessages).not.toHaveBeenCalled();
     expect(prisma.historicalSender.update).not.toHaveBeenCalled();
   });
 
   it("falls back to running when kill-switch lookup fails", async () => {
-    // .catch fallback — worst-case the route runs as today; never blocks
-    // a human-driven action because of an infrastructure hiccup.
     getKillSwitchStatus.mockRejectedValueOnce(new Error("db down"));
     getMessages.mockResolvedValueOnce({
       messages: [{ id: "m1" }],
@@ -202,6 +199,6 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
     });
     const res = await POST(makeRequest({ senderEmails: ["x@spam.test"] }));
     expect(res.status).toBe(200);
-    expect(batchModify).toHaveBeenCalledTimes(1);
+    expect(trashMessage).toHaveBeenCalledTimes(1);
   });
 });

@@ -160,32 +160,36 @@ export const POST = withEmailProvider(
         pageToken,
       });
 
-      const ids = messages.map((m) => m.id).filter(Boolean);
-      if (ids.length > 0) {
-        for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
-          if (hasTrashAction) {
-            // TRASH path: addLabelIds:[TRASH], removeLabelIds:[INBOX].
-            // Phase 1 invariant: NEVER messages.delete. 30-day recovery in
-            // Gmail Trash.
-            await runGmailOp(
-              () =>
-                gmail.users.messages.batchModify({
-                  userId: "me",
-                  requestBody: {
-                    ids: slice,
-                    addLabelIds: [GmailLabel.TRASH],
-                    removeLabelIds: [GmailLabel.INBOX],
-                  },
-                }),
-              {
-                op: "rule_apply_historical_trash",
-                targetId: `rule:${ruleId}:sender:${senderEmail}:${slice.length}`,
-                downgradeNotFound: true,
-              },
-            );
-            trashed += slice.length;
-          } else {
-            // ARCHIVE path: removeLabelIds:[INBOX] only. No TRASH label.
+      if (hasTrashAction) {
+        // EL-459: Use users.messages.trash (proper move-to-Trash API). The
+        // batchModify+addLabelIds:[TRASH] approach is unreliable: Gmail
+        // accepts the label add but doesn't always actually move the message
+        // to Trash. messages.trash is the canonical 'show up in user's Trash
+        // folder' API. NEVER call messages.delete (permanent).
+        for (const msg of messages) {
+          if (!msg.id) continue;
+          await runGmailOp(
+            () =>
+              gmail.users.messages.trash({
+                userId: "me",
+                id: msg.id!,
+              }),
+            {
+              op: "rule_apply_historical_trash",
+              targetId: `rule:${ruleId}:sender:${senderEmail}:msg:${msg.id}`,
+              downgradeNotFound: true,
+            },
+          );
+          trashed += 1;
+        }
+      } else {
+        const ids = messages.map((m) => m.id).filter(Boolean);
+        if (ids.length > 0) {
+          for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
+            // ARCHIVE path: removeLabelIds:[INBOX] only. batchModify is fine
+            // for archive because we're only removing the INBOX label — the
+            // 'archived' state in Gmail is just absence of INBOX, not a
+            // dedicated folder API like Trash has.
             await runGmailOp(
               () =>
                 gmail.users.messages.batchModify({
