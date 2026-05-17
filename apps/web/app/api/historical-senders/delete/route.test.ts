@@ -45,6 +45,11 @@ vi.mock("@/utils/gmail/errors", () => ({
   runGmailOp: async <T>(fn: () => Promise<T>) => fn(),
 }));
 
+const getKillSwitchStatus = vi.fn(async () => ({ paused: false }));
+vi.mock("@/utils/kill-switch", () => ({
+  getKillSwitchStatus: (...args: unknown[]) => getKillSwitchStatus(...args),
+}));
+
 import { POST } from "./route";
 
 function makeRequest(body: unknown, providerOverride?: { name: string }) {
@@ -64,6 +69,8 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
     vi.clearAllMocks();
     batchModify.mockClear();
     getMessages.mockReset();
+    getKillSwitchStatus.mockReset();
+    getKillSwitchStatus.mockResolvedValue({ paused: false });
     prisma.historicalSender.update.mockResolvedValue({} as never);
   });
 
@@ -172,5 +179,29 @@ describe("POST /api/historical-senders/delete (EL-438)", () => {
       /Too small/,
     );
     expect(batchModify).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits when EL-370 kill-switch is paused (no Gmail mutation)", async () => {
+    getKillSwitchStatus.mockResolvedValueOnce({ paused: true });
+    const res = await POST(makeRequest({ senderEmails: ["junk@spam.test"] }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ trashed: [], killSwitchPaused: true });
+    expect(batchModify).not.toHaveBeenCalled();
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(prisma.historicalSender.update).not.toHaveBeenCalled();
+  });
+
+  it("falls back to running when kill-switch lookup fails", async () => {
+    // .catch fallback — worst-case the route runs as today; never blocks
+    // a human-driven action because of an infrastructure hiccup.
+    getKillSwitchStatus.mockRejectedValueOnce(new Error("db down"));
+    getMessages.mockResolvedValueOnce({
+      messages: [{ id: "m1" }],
+      nextPageToken: undefined,
+    });
+    const res = await POST(makeRequest({ senderEmails: ["x@spam.test"] }));
+    expect(res.status).toBe(200);
+    expect(batchModify).toHaveBeenCalledTimes(1);
   });
 });
