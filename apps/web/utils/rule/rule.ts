@@ -18,6 +18,7 @@ import { resolveLabelNameAndId } from "@/utils/label/resolve-label";
 import { getMissingRecipientMessage } from "@/utils/rule/recipient-validation";
 import { isDuplicateError } from "@/utils/prisma-helpers";
 import { SafeError } from "@/utils/error";
+import { assertNotSenderLockedFromMutation } from "@/utils/rule/sender-lock";
 import type { AttachmentSourceInput } from "@/utils/attachments/source-schema";
 import { validateWebhookUrlFormat } from "@/utils/webhook-validation";
 import {
@@ -411,6 +412,20 @@ export async function updateRule({
       name: result.name,
       ruleId,
     });
+
+    // EL-452 / EL-439: enforce sender-lock. If this rule was created via the
+    // per-sender chat, its `from` condition cannot be edited — only deleted
+    // entirely. Other fields (label name, action target, subject/body conditions,
+    // enabled flag) remain editable.
+    const existingRule = await prisma.rule.findUnique({
+      where: { id: ruleId, emailAccountId },
+      select: { from: true, lockedToSenderId: true },
+    });
+    if (existingRule) {
+      assertNotSenderLockedFromMutation(existingRule, {
+        from: result.condition.static?.from ?? null,
+      });
+    }
 
     assertWebhookActionsAllowed(result.actions);
 
