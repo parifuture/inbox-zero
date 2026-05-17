@@ -767,7 +767,7 @@ function manageInboxInputSchema(provider: string) {
     action: z
       .enum(manageInboxActions)
       .describe(
-        "archive_threads: archive by ID (default unless user says delete/trash). trash_threads: move to trash. label_threads: apply a label (requires labelName). mark_read_threads: mark read/unread. bulk_archive_senders: archive ALL emails from senders server-wide after the user confirms that broad scope (never for trash/delete). unsubscribe_senders: unsubscribe and archive from senders (only for explicit unsubscribe requests).",
+        "archive_threads: archive by ID (default unless user says delete/trash). trash_threads: move to trash. label_threads: apply a label (requires labelName). mark_read_threads: mark read/unread. bulk_archive_senders: archive ALL emails from senders server-wide after the user confirms that broad scope. bulk_trash_senders: move ALL emails from senders to Trash (30-day recoverable, never permanent delete) after explicit user confirmation \u2014 use when the user wants to delete all mail from a sender. unsubscribe_senders: unsubscribe and archive from senders (only for explicit unsubscribe requests).",
       ),
     threadIds: threadIdsSchema
       .nullish()
@@ -795,7 +795,7 @@ function manageInboxInputSchema(provider: string) {
     fromEmails: senderEmailsSchema
       .nullish()
       .describe(
-        "Required for bulk_archive_senders and unsubscribe_senders. Sender email addresses to act on.",
+        "Required for bulk_archive_senders, bulk_trash_senders, and unsubscribe_senders. Sender email addresses to act on.",
       ),
   });
 }
@@ -837,7 +837,7 @@ export const manageInboxTool = ({
       if (isSenderAction && !parsedInput.fromEmails?.length) {
         return {
           error:
-            'No sender-level action was taken. "fromEmails" is required for bulk_archive_senders and unsubscribe_senders. If you only meant the emails already shown, use archive_threads with threadIds instead.',
+            'No sender-level action was taken. "fromEmails" is required for bulk_archive_senders, bulk_trash_senders, and unsubscribe_senders. If you only meant the emails already shown, use archive_threads with threadIds instead.',
         };
       }
 
@@ -871,7 +871,7 @@ export const manageInboxTool = ({
           if (!normalizedFromEmails.length) {
             return {
               error:
-                'No sender-level action was taken. "fromEmails" is required for bulk_archive_senders and unsubscribe_senders. If you only meant the emails already shown, use archive_threads with threadIds instead.',
+                'No sender-level action was taken. "fromEmails" is required for bulk_archive_senders, bulk_trash_senders, and unsubscribe_senders. If you only meant the emails already shown, use archive_threads with threadIds instead.',
             };
           }
 
@@ -912,6 +912,24 @@ export const manageInboxTool = ({
               failedSenders,
               autoUnsubscribeCount,
               autoUnsubscribeAttemptedCount,
+            };
+          }
+
+          if (parsedInput.action === "bulk_trash_senders") {
+            // EL-457: bulk trash by sender. Phase 1 invariant: this calls
+            // bulkTrashFromSenders which moves threads to Gmail TRASH (30-day
+            // recoverable). Never calls messages.delete (permanent).
+            await emailProvider.bulkTrashFromSenders(
+              normalizedFromEmails,
+              email,
+              emailAccountId,
+            );
+
+            return {
+              success: true,
+              action: parsedInput.action,
+              sendersCount: normalizedFromEmails.length,
+              senders: normalizedFromEmails,
             };
           }
 
