@@ -469,7 +469,7 @@ function formatSerializedMatchMetadata(
   });
 }
 
-function formatSenderRuleHiddenContext(
+export function formatSenderRuleHiddenContext(
   context: Extract<MessageContext, { type: "sender-rule" }>,
 ) {
   const samples = context.sampleMessages.length
@@ -491,6 +491,15 @@ function formatSenderRuleHiddenContext(
     "This sender lock is enforced server-side: the resulting Rule will carry lockedToSenderId=<sender> and the from-condition cannot be edited later. " +
     "Treat the sender as a fixed input to the rule \u2014 do not propose conditions that broaden the scope to other senders, and do not ask the user which sender to apply this to. " +
     "You may propose a single Rule with branched conditions/actions covering multiple intents (e.g., 'keep receipts, archive everything else'); they all stay scoped to this one sender.\n\n" +
+    // EL-456: ground rule proposals in real mail. The user explicitly asked
+    // for the ability to verify which emails a rule will match before saving.
+    "GROUNDING REQUIREMENT \u2014 do NOT invent conditions from category knowledge. " +
+    `Before proposing any subject/body condition, call the searchInbox tool with a Gmail-style query scoped to this sender (e.g., \`from:${context.senderEmail} subject:"<candidate phrase>"\`) to verify the pattern actually matches mail in the user's inbox. ` +
+    "If the user asks to verify a candidate condition, run searchInbox first and SHOW the matching subjects + counts in your reply BEFORE drafting the rule. " +
+    "If a search returns zero matches, say so plainly and ask the user how they want to refine the pattern \u2014 do not push forward with an unverified condition. " +
+    "Use readEmail on a couple of representative messages when the user is unsure what the sender actually sends. " +
+    "You may ALSO use the sample messages below as a starting hint, but they are a small unverified sample \u2014 always prefer searchInbox for confirmation.\n\n" +
+    "VERIFY-BEFORE-SAVE \u2014 when the user asks 'will this catch the right emails?' or 'what would this match?' or similar, treat that as an explicit instruction to run searchInbox with the proposed query, report the count + a few example subjects, and ONLY THEN call createRule. Never claim you cannot search; the searchInbox tool is available in this chat.\n\n" +
     `<sender>${context.senderEmail}</sender>\n\n` +
     `<sample-messages count="${context.sampleMessages.length}">\n${samples}\n</sample-messages>\n\n` +
     `<existing-gmail-labels>${labels}</existing-gmail-labels>`

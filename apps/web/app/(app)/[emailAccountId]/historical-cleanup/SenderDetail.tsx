@@ -173,7 +173,10 @@ export function SenderDetail({
     setContext(context);
     setInput(
       `Help me write a rule for mail from ${sender.senderEmail}. ` +
-        "Walk me through the options based on what they actually send me.",
+        "Use searchInbox to verify any subject/body patterns against my real " +
+        "inbox before drafting the rule, and show me match counts plus a " +
+        "few example subject lines so I can confirm the rule will catch " +
+        "the right emails.",
     );
     setOpen((arr) => [...arr, "chat-sidebar"]);
   };
