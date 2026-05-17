@@ -9,6 +9,7 @@ import {
   ShieldCheckIcon,
   SendIcon,
   TagIcon,
+  Trash2Icon,
   WebhookIcon,
   FileTextIcon,
   MailIcon,
@@ -58,6 +59,9 @@ export function getActionDisplay(
     }
     case ActionType.ARCHIVE:
       return "Archive";
+    case ActionType.TRASH:
+      // EL-457: TRASH = move to Gmail Trash (30-day recoverable).
+      return "Move to Trash";
     case ActionType.MARK_READ:
       return "Mark Read";
     case ActionType.MARK_SPAM:
@@ -95,6 +99,8 @@ export function getActionIcon(actionType: ActionType) {
       return TagIcon;
     case ActionType.ARCHIVE:
       return ArchiveIcon;
+    case ActionType.TRASH:
+      return Trash2Icon;
     case ActionType.MOVE_FOLDER:
       return FolderInputIcon;
     case ActionType.DRAFT_EMAIL:

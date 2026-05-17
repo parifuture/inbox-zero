@@ -31,6 +31,7 @@ export const actionInputs: Record<
   }
 > = {
   [ActionType.ARCHIVE]: { fields: [] },
+  [ActionType.TRASH]: { fields: [] },
   [ActionType.LABEL]: {
     fields: [
       {
@@ -219,6 +220,7 @@ export function sanitizeActionFields(
 
   switch (action.type) {
     case ActionType.ARCHIVE:
+    case ActionType.TRASH:
     case ActionType.MARK_SPAM:
     case ActionType.MARK_READ:
     case ActionType.DIGEST:

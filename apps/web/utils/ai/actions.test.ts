@@ -565,4 +565,63 @@ describe("runActionFunction", () => {
     });
     expect(client.draftEmail).toHaveBeenCalled();
   });
+
+  // EL-457: TRASH rule action moves matching mail to Gmail Trash via
+  // EmailProvider.trashThread (which adds the TRASH label, never permanent
+  // delete). Phase 1 invariant: never call messages.delete from rule
+  // execution.
+  it("TRASH action calls EmailProvider.trashThread with automation source", async () => {
+    const client = createMockEmailProvider();
+
+    await runActionFunction({
+      client,
+      email,
+      action: {
+        id: "action-trash",
+        type: ActionType.TRASH,
+      },
+      emailAccount,
+      executedRule: {
+        id: "executed-rule-trash",
+        threadId: "thread-1",
+        emailAccountId: "account-1",
+        ruleId: "rule-trash",
+      } as any,
+      logger,
+    });
+
+    expect(client.trashThread).toHaveBeenCalledWith(
+      "thread-1",
+      "user@example.com",
+      "automation",
+    );
+    expect(client.archiveThread).not.toHaveBeenCalled();
+  });
+
+  it("ARCHIVE action does NOT call trashThread (regression guard)", async () => {
+    const client = createMockEmailProvider();
+
+    await runActionFunction({
+      client,
+      email,
+      action: {
+        id: "action-archive",
+        type: ActionType.ARCHIVE,
+      },
+      emailAccount,
+      executedRule: {
+        id: "executed-rule-archive",
+        threadId: "thread-1",
+        emailAccountId: "account-1",
+        ruleId: "rule-archive",
+      } as any,
+      logger,
+    });
+
+    expect(client.archiveThread).toHaveBeenCalledWith(
+      "thread-1",
+      "user@example.com",
+    );
+    expect(client.trashThread).not.toHaveBeenCalled();
+  });
 });
