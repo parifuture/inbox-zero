@@ -1087,4 +1087,65 @@ describe("chat inbox tools - sender categories", () => {
     });
     expect(result.sendersCount).toBe(6);
   });
+
+  // EL-457: bulk_trash_senders mirrors bulk_archive_senders but moves to
+  // Gmail Trash (30-day recoverable). The chat assistant uses this when
+  // the user wants to delete all mail from a sender in one shot.
+  it("bulk_trash_senders calls emailProvider.bulkTrashFromSenders", async () => {
+    const bulkTrashFromSenders = vi.fn().mockResolvedValue(undefined);
+    const bulkArchiveFromSenders = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      bulkTrashFromSenders,
+      bulkArchiveFromSenders,
+    } as any);
+
+    const toolInstance = manageInboxTool({
+      email: TEST_EMAIL,
+      emailAccountId: "email-account-1",
+      provider: "google",
+      logger,
+    });
+
+    const result = await (toolInstance.execute as any)({
+      action: "bulk_trash_senders",
+      fromEmails: ["news@a.com", "updates@b.com"],
+    });
+
+    expect(bulkTrashFromSenders).toHaveBeenCalledWith(
+      ["news@a.com", "updates@b.com"],
+      TEST_EMAIL,
+      "email-account-1",
+    );
+    // Phase 1 invariant: bulk_trash_senders must NOT also archive (not
+    // a no-op redirect that calls bulkArchiveFromSenders by accident).
+    expect(bulkArchiveFromSenders).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      action: "bulk_trash_senders",
+      success: true,
+      sendersCount: 2,
+      senders: ["news@a.com", "updates@b.com"],
+    });
+  });
+
+  it("bulk_trash_senders rejects when fromEmails is missing", async () => {
+    vi.mocked(createEmailProvider).mockResolvedValue({
+      bulkTrashFromSenders: vi.fn(),
+    } as any);
+
+    const toolInstance = manageInboxTool({
+      email: TEST_EMAIL,
+      emailAccountId: "email-account-1",
+      provider: "google",
+      logger,
+    });
+
+    const result = await (toolInstance.execute as any)({
+      action: "bulk_trash_senders",
+      fromEmails: [],
+    });
+
+    // The schema-level validator runs first and rejects empty arrays.
+    expect(result.error).toContain("fromEmails");
+    expect(result.error.toLowerCase()).toContain("sender email");
+  });
 });
