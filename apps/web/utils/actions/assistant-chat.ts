@@ -285,6 +285,9 @@ export async function confirmAssistantCreateRuleForAccount({
       runOnThreads: true,
       logger,
       enablement: { source: "chat", chatRiskConfirmed: true },
+      // EL-451: persist the sender lock from the original tool invocation
+      // so confirm-on-pending also produces a sender-locked rule.
+      lockedToSenderId: reservation.output.lockedToSenderId ?? null,
     });
   } catch (error) {
     if (

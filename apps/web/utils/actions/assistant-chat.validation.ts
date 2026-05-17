@@ -129,6 +129,13 @@ export const pendingCreateRuleToolOutputSchema = z.object({
       confirmedAt: z.string().min(1),
     })
     .optional(),
+  /**
+   * EL-451: when this rule was proposed inside a per-sender chat surface,
+   * `lockedToSenderId` is the sender email this rule is permanently scoped
+   * to. The preview card surfaces a 🔒 sender-lock badge and the server
+   * forces `from = lockedToSenderId` on persistence.
+   */
+  lockedToSenderId: z.string().nullable().optional(),
 });
 export type PendingCreateRuleToolOutput = z.infer<
   typeof pendingCreateRuleToolOutputSchema

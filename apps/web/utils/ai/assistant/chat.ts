@@ -129,6 +129,12 @@ export async function aiProcessAssistantChat({
     },
     getRuleReadState: () => ruleReadState,
     onRulesStateExposed,
+    // EL-451: when the chat surface is the per-sender chat, every rule the
+    // LLM creates is scoped + locked to that sender. The createRule tool
+    // forces `from = senderLockEmail` and persists `lockedToSenderId` so the
+    // rule cannot drift off-sender.
+    senderLockEmail:
+      context?.type === "sender-rule" ? context.senderEmail : null,
   };
 
   let freshRuleContextMessage: ModelMessage[] = [];

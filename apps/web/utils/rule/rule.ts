@@ -121,6 +121,13 @@ type RuleRecordData = {
   subject?: string | null;
   body?: string | null;
   groupId?: string | null;
+  /**
+   * EL-451 / EL-448: when set, this Rule was created via the per-sender
+   * AI rule chat (Historical Cleanup) and is permanently scoped to that
+   * sender. The `from` condition cannot be edited after creation — see
+   * EL-452 lockdown in `updateRule`.
+   */
+  lockedToSenderId?: string | null;
 };
 
 async function updateRuleAndQueueHistory({
@@ -247,6 +254,7 @@ export async function createRuleWithResolvedActions({
       subject: data.subject ?? undefined,
       body: data.body ?? undefined,
       groupId: data.groupId ?? undefined,
+      lockedToSenderId: data.lockedToSenderId ?? undefined,
       actions: {
         createMany: {
           data: addNestedActionOwnershipToInputs(actions, emailAccountId),
@@ -327,6 +335,7 @@ export async function createRule({
   runOnThreads,
   logger,
   enablement = { source: "default" } satisfies CreateRuleEnablement,
+  lockedToSenderId,
 }: {
   result: CreateOrUpdateRuleSchema;
   emailAccountId: string;
@@ -335,11 +344,18 @@ export async function createRule({
   runOnThreads: boolean;
   logger: Logger;
   enablement?: CreateRuleEnablement;
+  /**
+   * EL-451: when set, persists `Rule.lockedToSenderId` and (server-side)
+   * forces `from` to the sender email so the rule cannot drift off the
+   * scoping sender. The lock is enforced on update by EL-452.
+   */
+  lockedToSenderId?: string | null;
 }) {
   try {
     logger.info("Creating rule", {
       name: result.name,
       systemType,
+      lockedToSenderId: lockedToSenderId ?? null,
     });
 
     assertWebhookActionsAllowed(result.actions);
@@ -355,6 +371,13 @@ export async function createRule({
       emailAccountId,
       logger,
     );
+
+    // Sender lock: when `lockedToSenderId` is set, the `from` condition is
+    // canonical and must equal the sender email — even if the LLM proposed
+    // a different from-pattern. EL-452 then prevents future updates from
+    // changing it.
+    const lockedFrom = lockedToSenderId ? lockedToSenderId : undefined;
+    const effectiveFrom = lockedFrom ?? result.condition.static?.from;
 
     const rule = await createRuleWithResolvedActions({
       emailAccountId,
@@ -376,9 +399,10 @@ export async function createRule({
         runOnThreads,
         conditionalOperator: result.condition.conditionalOperator ?? undefined,
         instructions: result.condition.aiInstructions,
-        from: result.condition.static?.from,
+        from: effectiveFrom,
         to: result.condition.static?.to,
         subject: result.condition.static?.subject,
+        lockedToSenderId: lockedToSenderId ?? null,
       },
       actions: mappedActions,
     });
