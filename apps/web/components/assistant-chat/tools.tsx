@@ -56,6 +56,7 @@ import { InlineEmailCard } from "@/components/assistant-chat/inline-email-card";
 import { RuleDialog } from "@/app/(app)/[emailAccountId]/assistant/RuleDialog";
 import { useDialogState } from "@/hooks/useDialogState";
 import { Switch } from "@/components/ui/switch";
+import { EMAIL_ACCOUNT_HEADER } from "@/utils/config";
 import { Badge } from "@/components/Badge";
 import { getActionDisplay, getActionIcon } from "@/utils/action-display";
 import { getActionColor } from "@/components/PlanBadge";
@@ -848,6 +849,10 @@ export function PendingCreateRuleToolCard({
   const { chatId } = useChat();
   const [isConfirming, setIsConfirming] = useState(false);
   const [ruleIdOverride, setRuleIdOverride] = useState<string | null>(null);
+  // EL-454: opt-in toggle to apply this rule to historical mail from the
+  // sender. Default OFF per spec. Only relevant when the rule is
+  // sender-locked (EL-451).
+  const [applyHistorical, setApplyHistorical] = useState(false);
 
   const riskMessages =
     getOutputField<string[]>(output, "riskMessages")?.filter(Boolean) ?? [];
@@ -883,6 +888,54 @@ export function PendingCreateRuleToolCard({
       }
 
       setRuleIdOverride(createdId);
+
+      // EL-454: fire-and-await historical apply if the user toggled it on.
+      // Only sender-locked rules are eligible (server enforces the same).
+      if (applyHistorical && lockedToSenderId) {
+        try {
+          const res = await fetch(`/api/rules/${createdId}/apply-historical`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              [EMAIL_ACCOUNT_HEADER]: emailAccountId,
+            },
+          });
+          const body = (await res.json().catch(() => null)) as {
+            applied?: boolean;
+            archived?: number;
+            reason?: string;
+          } | null;
+          if (res.ok && body?.applied) {
+            toastSuccess({
+              description: `Rule created. Applied to ${body.archived ?? 0} historical email${(body.archived ?? 0) === 1 ? "" : "s"}.`,
+            });
+          } else if (res.ok && body?.reason === "unsupported_action") {
+            toastSuccess({
+              description:
+                "Rule created. Historical apply is only supported for archive actions in this rule.",
+            });
+          } else if (res.ok && body?.reason === "kill_switch_paused") {
+            toastSuccess({
+              description:
+                "Rule created. Historical apply skipped \u2014 autonomous actions are paused.",
+            });
+          } else {
+            // Don't block on historical-apply failure; the rule is live.
+            toastSuccess({
+              description:
+                "Rule created. Historical apply could not run \u2014 retry from the rule page.",
+            });
+          }
+          return;
+        } catch {
+          toastSuccess({
+            description:
+              "Rule created. Historical apply could not run \u2014 retry from the rule page.",
+          });
+          return;
+        }
+      }
+
       toastSuccess({ description: "Rule created and enabled." });
     } catch {
       toastError({ description: "Could not create this rule." });
@@ -901,6 +954,8 @@ export function PendingCreateRuleToolCard({
       riskMessages={riskMessages}
       ruleId={ruleId}
       lockedToSenderId={lockedToSenderId}
+      applyHistorical={applyHistorical}
+      onChangeApplyHistorical={setApplyHistorical}
     />
   );
 }
@@ -1069,6 +1124,8 @@ function PendingCreateRuleCardContent({
   riskMessages,
   ruleId,
   lockedToSenderId,
+  applyHistorical,
+  onChangeApplyHistorical,
 }: {
   args: CreateRuleTool["input"];
   disableConfirm: boolean;
@@ -1084,6 +1141,12 @@ function PendingCreateRuleCardContent({
    * scoped to that sender (per EL-439 / EL-452).
    */
   lockedToSenderId?: string | null;
+  /**
+   * EL-454: opt-in toggle for retroactive apply. Only shown for
+   * sender-locked rules. Default OFF per spec.
+   */
+  applyHistorical?: boolean;
+  onChangeApplyHistorical?: (value: boolean) => void;
 }) {
   if (ruleId) {
     return <CreatedRuleToolCard args={args} ruleId={ruleId} />;
@@ -1143,6 +1206,31 @@ function PendingCreateRuleCardContent({
       ) : null}
 
       <CreatedRuleToolCard args={args} preview />
+
+      {lockedToSenderId && onChangeApplyHistorical ? (
+        <div className="flex items-start gap-3 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+          <Switch
+            id="apply-historical-toggle"
+            checked={!!applyHistorical}
+            onCheckedChange={onChangeApplyHistorical}
+            disabled={isConfirming || isProcessing || disableConfirm}
+          />
+          <div className="flex-1">
+            <label
+              htmlFor="apply-historical-toggle"
+              className="font-medium cursor-pointer"
+            >
+              Apply to historical mail
+            </label>
+            <p className="text-xs text-muted-foreground">
+              When on, archives existing inbox mail from{" "}
+              <span className="font-mono">{lockedToSenderId}</span> matching the
+              safety filter (skips sent, starred, and trash). Only the archive
+              action runs retroactively. Off by default.
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex justify-end">
         <Button
