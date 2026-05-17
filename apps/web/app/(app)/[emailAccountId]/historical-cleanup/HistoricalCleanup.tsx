@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { PageWrapper } from "@/components/PageWrapper";
 import { PageHeader } from "@/components/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -80,6 +81,26 @@ export function HistoricalCleanup() {
   const { data, error, isLoading, mutate } = useHistoricalSenders(params);
   const senders = data?.senders ?? [];
   const total = data?.total ?? 0;
+
+  // EL-450 deep-link: ?sender=<email>[&openChat=true] auto-selects a sender
+  // (and signals SenderDetail to open the chat). Used by the EL-453 Rules-list
+  // "Edit in {sender} chat" affordance and any other entry point that wants
+  // to land users directly on the sender-rule chat surface.
+  const searchParams = useSearchParams();
+  const deepLinkSenderEmail = searchParams.get("sender");
+  const deepLinkOpenChat = searchParams.get("openChat") === "true";
+  const handledDeepLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!deepLinkSenderEmail) return;
+    if (handledDeepLinkRef.current === deepLinkSenderEmail) return;
+    const match = senders.find(
+      (s) => s.senderEmail.toLowerCase() === deepLinkSenderEmail.toLowerCase(),
+    );
+    if (match) {
+      handledDeepLinkRef.current = deepLinkSenderEmail;
+      setSelectedRow(match);
+    }
+  }, [deepLinkSenderEmail, senders]);
 
   const archiveSenders = useArchiveSenders();
   const skipSenders = useSkipSenders();
@@ -283,6 +304,13 @@ export function HistoricalCleanup() {
               onDelete={handleDelete}
               isArchiving={isWorking}
               isDeleting={isWorking}
+              autoOpenChatForSenderEmail={
+                deepLinkOpenChat &&
+                deepLinkSenderEmail &&
+                handledDeepLinkRef.current === deepLinkSenderEmail
+                  ? deepLinkSenderEmail
+                  : null
+              }
             />
           </div>
         </div>
