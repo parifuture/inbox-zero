@@ -342,33 +342,51 @@ export const POST = withEmailProvider("senders/action", async (request) => {
         maxResults: 500,
         pageToken,
       });
-      const ids = messages.map((m) => m.id).filter(Boolean) as string[];
-      if (ids.length > 0) {
-        for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
-          const requestBody =
-            body.action === "archive_forever"
-              ? { ids: slice, removeLabelIds: [GmailLabel.INBOX] }
-              : {
-                  ids: slice,
-                  addLabelIds: [GmailLabel.TRASH],
-                  removeLabelIds: [GmailLabel.INBOX],
-                };
+      if (body.action === "archive_forever") {
+        // Archive: removing INBOX label is exactly what 'archived' means in
+        // Gmail — batchModify is fine here.
+        const ids = messages.map((m) => m.id).filter(Boolean) as string[];
+        if (ids.length > 0) {
+          for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
+            await runGmailOp(
+              () =>
+                gmail.users.messages.batchModify({
+                  userId: "me",
+                  requestBody: {
+                    ids: slice,
+                    removeLabelIds: [GmailLabel.INBOX],
+                  },
+                }),
+              {
+                op: "batch_archive",
+                targetId: `sender:${senderEmail}:${slice.length}`,
+                downgradeNotFound: true,
+              },
+            );
+            retroactiveApplied += slice.length;
+          }
+        }
+      } else {
+        // EL-459: Trash via users.messages.trash (the proper Gmail
+        // 'move to Trash' API). batchModify+addLabelIds:[TRASH] is
+        // unreliable — Gmail accepts the label add but doesn't always
+        // actually move the message to Trash. messages.trash guarantees the
+        // message shows up in the user's Trash folder. NEVER messages.delete.
+        for (const msg of messages) {
+          if (!msg.id) continue;
           await runGmailOp(
             () =>
-              gmail.users.messages.batchModify({
+              gmail.users.messages.trash({
                 userId: "me",
-                requestBody,
+                id: msg.id!,
               }),
             {
-              op:
-                body.action === "archive_forever"
-                  ? "batch_archive"
-                  : "batch_trash",
-              targetId: `sender:${senderEmail}:${slice.length}`,
+              op: "trash_message",
+              targetId: `sender:${senderEmail}:msg:${msg.id}`,
               downgradeNotFound: true,
             },
           );
-          retroactiveApplied += slice.length;
+          retroactiveApplied += 1;
         }
       }
       pageToken = nextPageToken ?? undefined;

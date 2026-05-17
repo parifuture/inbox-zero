@@ -80,11 +80,15 @@ describe("runApplierSideEffects", () => {
     expect(batchModify).not.toHaveBeenCalled();
   });
 
-  it("chunks to 1000 ids per batch and sleeps between chunks", async () => {
+  it("chunks to 1000 ids per batch and uses users.messages.trash for auto_trash (EL-459)", async () => {
     const ids = Array.from(
       { length: BATCH_MODIFY_CHUNK_SIZE + 5 },
       (_, i) => `m${i}`,
     );
+    // EL-459: auto_trash now bypasses the injected batchModify and goes
+    // directly through gmail.users.messages.trash because batchModify+
+    // addLabelIds:[TRASH] is unreliable.
+    const trashMessage = vi.fn().mockResolvedValue(undefined);
     const batchModify = vi.fn().mockResolvedValue(undefined);
     const sleepMs = vi.fn().mockResolvedValue(undefined);
 
@@ -93,7 +97,9 @@ describe("runApplierSideEffects", () => {
       action: "auto_trash",
       logger,
       deps: {
-        gmail: {} as any,
+        gmail: {
+          users: { messages: { trash: trashMessage } },
+        } as any,
         listMessageIds: async () => ids,
         batchModify,
         sleepMs,
@@ -102,21 +108,19 @@ describe("runApplierSideEffects", () => {
 
     expect(result.total).toBe(BATCH_MODIFY_CHUNK_SIZE + 5);
     expect(result.processed).toBe(BATCH_MODIFY_CHUNK_SIZE + 5);
-    expect(batchModify).toHaveBeenCalledTimes(2);
-    expect(batchModify.mock.calls[0][0].ids).toHaveLength(
-      BATCH_MODIFY_CHUNK_SIZE,
-    );
-    expect(batchModify.mock.calls[1][0].ids).toHaveLength(5);
+    // One trash call per id — the proper API.
+    expect(trashMessage).toHaveBeenCalledTimes(BATCH_MODIFY_CHUNK_SIZE + 5);
+    expect(trashMessage.mock.calls[0][0]).toEqual({
+      userId: "me",
+      id: "m0",
+    });
+    // batchModify must NOT be used for the trash path — that's the EL-459 bug.
+    expect(batchModify).not.toHaveBeenCalled();
     // 1 sleep between the 2 chunks, none after the last.
     expect(sleepMs).toHaveBeenCalledTimes(1);
-    // Each batch sends the auto_trash mutation.
-    expect(batchModify.mock.calls[0][0].mutation).toEqual({
-      addLabelIds: [GmailLabel.TRASH],
-      removeLabelIds: [GmailLabel.INBOX],
-    });
   });
 
-  it("auto_archive passes INBOX removal with no add labels", async () => {
+  it("auto_archive passes INBOX removal with no add labels (still uses batchModify)", async () => {
     const batchModify = vi.fn().mockResolvedValue(undefined);
     await runApplierSideEffects({
       senderEmail: "foo@bar.com",
@@ -160,17 +164,19 @@ describe("runApplierSideEffects", () => {
     });
   });
 
-  it("propagates batchModify errors so the job can be marked failed", async () => {
-    const batchModify = vi.fn().mockRejectedValue(new Error("boom"));
+  it("propagates trash errors so the job can be marked failed (EL-459)", async () => {
+    const trashMessage = vi.fn().mockRejectedValue(new Error("boom"));
     await expect(
       runApplierSideEffects({
         senderEmail: "foo@bar.com",
         action: "auto_trash",
         logger,
         deps: {
-          gmail: {} as any,
+          gmail: {
+            users: { messages: { trash: trashMessage } },
+          } as any,
           listMessageIds: async () => ["m1"],
-          batchModify,
+          batchModify: vi.fn(),
           sleepMs: async () => {},
         },
       }),
