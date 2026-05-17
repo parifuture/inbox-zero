@@ -766,6 +766,16 @@ export function getRuleActionTypeOptions({
       label: "Archive",
       value: ActionType.ARCHIVE,
     },
+    // EL-457: TRASH = move matching mail to Gmail Trash (30-day recoverable).
+    // Available when action-availability allows it (rule-availability layer).
+    ...(availableActions.has(ActionType.TRASH)
+      ? [
+          {
+            label: "Move to Trash",
+            value: ActionType.TRASH,
+          },
+        ]
+      : []),
     {
       label: "Mark read",
       value: ActionType.MARK_READ,

@@ -771,10 +771,10 @@ export function buildResolvedSystemPrompt({
 - If the user asks why a specific processed email was handled a certain way, identify the exact email first and then call getRuleExecutionForMessage with that messageId. Do not guess from unrelated recent executions.
 - If a rule write reports stale rule state, refresh with getUserRulesAndSettings and retry from that latest state.`,
     `Rule action vocabulary (avoid common mistakes):
-- Rule action types are: ARCHIVE, LABEL, MARK_READ, MARK_SPAM, REPLY, SEND_EMAIL, FORWARD, DRAFT_EMAIL, CALL_WEBHOOK, DIGEST, MOVE_FOLDER, NOTIFY_SENDER. There is NO "TRASH" / "DELETE" rule action type.
-- MARK_SPAM moves to the SPAM folder, NOT to Trash. Never use MARK_SPAM when the user asks for trash, delete, or 'send to bin'.
-- When the user asks for 'trash' or 'delete' incoming mail via a rule: explain that there is no per-rule TRASH action, and propose ARCHIVE on the rule (which keeps mail out of the inbox going forward) plus a one-time bulk_trash_senders inbox action to clear what's already there. The EL-454 'Apply to historical mail' toggle on the rule preview card archives existing mail; for an actual move-to-Trash, the user should run bulk_trash_senders separately.
-- bulk_trash_senders moves all mail from a sender to Gmail Trash (30-day recoverable, never permanent delete). Confirm broad scope with the user before calling.
+- Rule action types are: ARCHIVE, TRASH, LABEL, MARK_READ, MARK_SPAM, REPLY, SEND_EMAIL, FORWARD, DRAFT_EMAIL, CALL_WEBHOOK, DIGEST, MOVE_FOLDER, NOTIFY_SENDER. TRASH moves matching incoming mail to Gmail Trash (30-day recoverable, never permanent delete) — use it for 'trash everything from this sender' style requests on incoming mail.
+- MARK_SPAM moves to the SPAM folder, NOT to Trash. Never use MARK_SPAM when the user asks for trash, delete, or 'send to bin' — use TRASH instead.
+- For 'trash everything from this sender' the typical setup is: a rule with the TRASH action (handles all future mail) plus optionally a one-time bulk_trash_senders to clear what's already in the inbox today.
+- bulk_trash_senders is the inbox action (one-shot cleanup of existing mail). TRASH is the rule action (every future incoming match). They are complementary, not duplicates.
 - Each rule's actions run for EVERY matching email — a single rule with [LABEL, ARCHIVE, MARK_SPAM] applies all three to every match. To branch behavior (e.g., 'keep receipts, archive everything else'), build it via condition.aiInstructions or split intents into separate rules; do not stack contradictory actions on one rule.
 - If you create a rule with the wrong actions, call updateRuleActions to fix it; you do NOT need to delete-and-recreate.
 - To delete an existing rule, call deleteRule with the rule's exact name. If the rule is enabled, ask the user to confirm first and pass confirmed:true on the second call.`,

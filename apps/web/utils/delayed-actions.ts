@@ -3,6 +3,7 @@ import { ActionType } from "@/generated/prisma/enums";
 // Action types that support delayed execution
 const SUPPORTED_DELAYED_ACTIONS: ActionType[] = [
   ActionType.ARCHIVE,
+  ActionType.TRASH,
   ActionType.LABEL,
   ActionType.REPLY,
   ActionType.SEND_EMAIL,

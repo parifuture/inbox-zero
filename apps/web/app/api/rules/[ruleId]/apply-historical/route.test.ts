@@ -231,4 +231,55 @@ describe("POST /api/rules/[ruleId]/apply-historical (EL-454)", () => {
       }),
     );
   });
+
+  // EL-457: TRASH path — rules with the new TRASH action retroactively move
+  // historical mail to Gmail Trash (addLabelIds:[TRASH], removeLabelIds:
+  // [INBOX]). NEVER messages.delete.
+  it("trashes historical mail when rule has TRASH action", async () => {
+    prisma.rule.findUnique.mockResolvedValue({
+      id: "r1",
+      from: "service@paypal.com",
+      lockedToSenderId: "service@paypal.com",
+      actions: [{ type: ActionType.TRASH }],
+    } as never);
+    getMessages.mockResolvedValueOnce({
+      messages: [{ id: "m1" }, { id: "m2" }],
+      nextPageToken: undefined,
+    });
+
+    const res = await POST(makeRequest(), makeContext("r1"));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ applied: true, archived: 0, trashed: 2 });
+    expect(batchModify).toHaveBeenCalledTimes(1);
+    const call = batchModify.mock.calls[0][0] as {
+      requestBody: { addLabelIds?: string[]; removeLabelIds: string[] };
+    };
+    expect(call.requestBody.addLabelIds).toEqual(["TRASH"]);
+    expect(call.requestBody.removeLabelIds).toEqual(["INBOX"]);
+  });
+
+  it("prefers TRASH over ARCHIVE when the rule has both actions", async () => {
+    prisma.rule.findUnique.mockResolvedValue({
+      id: "r1",
+      from: "service@paypal.com",
+      lockedToSenderId: "service@paypal.com",
+      actions: [{ type: ActionType.ARCHIVE }, { type: ActionType.TRASH }],
+    } as never);
+    getMessages.mockResolvedValueOnce({
+      messages: [{ id: "m1" }],
+      nextPageToken: undefined,
+    });
+
+    const res = await POST(makeRequest(), makeContext("r1"));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ applied: true, archived: 0, trashed: 1 });
+    const call = batchModify.mock.calls[0][0] as {
+      requestBody: { addLabelIds?: string[] };
+    };
+    expect(call.requestBody.addLabelIds).toEqual(["TRASH"]);
+  });
 });

@@ -903,16 +903,23 @@ export function PendingCreateRuleToolCard({
           const body = (await res.json().catch(() => null)) as {
             applied?: boolean;
             archived?: number;
+            trashed?: number;
             reason?: string;
           } | null;
           if (res.ok && body?.applied) {
+            // EL-457: report the destructive count when TRASH ran, otherwise
+            // archived. Both can't be non-zero on the same rule (TRASH wins).
+            const trashed = body.trashed ?? 0;
+            const archived = body.archived ?? 0;
+            const verb = trashed > 0 ? "Moved to Trash" : "Archived";
+            const count = trashed > 0 ? trashed : archived;
             toastSuccess({
-              description: `Rule created. Applied to ${body.archived ?? 0} historical email${(body.archived ?? 0) === 1 ? "" : "s"}.`,
+              description: `Rule created. ${verb} ${count} historical email${count === 1 ? "" : "s"}.`,
             });
           } else if (res.ok && body?.reason === "unsupported_action") {
             toastSuccess({
               description:
-                "Rule created. Historical apply is only supported for archive actions in this rule.",
+                "Rule created. Historical apply is only supported for archive or trash actions in this rule.",
             });
           } else if (res.ok && body?.reason === "kill_switch_paused") {
             toastSuccess({
@@ -1223,10 +1230,10 @@ function PendingCreateRuleCardContent({
               Apply to historical mail
             </label>
             <p className="text-xs text-muted-foreground">
-              When on, archives existing inbox mail from{" "}
-              <span className="font-mono">{lockedToSenderId}</span> matching the
-              safety filter (skips sent, starred, and trash). Only the archive
-              action runs retroactively. Off by default.
+              When on, applies the rule's destructive action (Trash if the rule
+              has a TRASH action, otherwise Archive) to existing inbox mail from{" "}
+              <span className="font-mono">{lockedToSenderId}</span>. Skips sent,
+              starred, and trash. Off by default.
             </p>
           </div>
         </div>

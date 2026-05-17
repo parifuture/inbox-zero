@@ -35,6 +35,7 @@ const conditionSchema = z
 const ruleActionTypeSchema = z.enum([
   ActionType.LABEL,
   ActionType.ARCHIVE,
+  ActionType.TRASH,
   ActionType.MARK_READ,
   ActionType.DRAFT_EMAIL,
   ActionType.DRAFT_MESSAGING_CHANNEL,

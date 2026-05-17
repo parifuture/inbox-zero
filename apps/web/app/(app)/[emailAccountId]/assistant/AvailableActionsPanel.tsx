@@ -13,6 +13,7 @@ const actionNames: Record<ActionType, string> = {
   [ActionType.LABEL]: "Label",
   [ActionType.MOVE_FOLDER]: "Move to folder",
   [ActionType.ARCHIVE]: "Archive",
+  [ActionType.TRASH]: "Move to Trash",
   [ActionType.DRAFT_EMAIL]: "Draft replies",
   [ActionType.DRAFT_MESSAGING_CHANNEL]: "Draft replies",
   [ActionType.REPLY]: "Send replies",

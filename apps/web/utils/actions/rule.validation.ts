@@ -70,6 +70,7 @@ export const updateRuleConditionSchema = z.object({
 
 const zodActionType = z.enum([
   ActionType.ARCHIVE,
+  ActionType.TRASH,
   ActionType.DRAFT_EMAIL,
   ActionType.DRAFT_MESSAGING_CHANNEL,
   ActionType.FORWARD,

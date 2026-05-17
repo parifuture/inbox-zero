@@ -37,6 +37,10 @@ export function ruleToText(rule: RuleWithActions): string {
       case ActionType.ARCHIVE:
         actions.push("Archive");
         break;
+      case ActionType.TRASH:
+        // EL-457: TRASH = move to Gmail Trash (30-day recoverable).
+        actions.push("Move to Trash");
+        break;
       case ActionType.LABEL:
         if (action.label) {
           actions.push(`Label as @[${action.label}]`);

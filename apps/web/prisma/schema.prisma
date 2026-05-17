@@ -1465,6 +1465,7 @@ model McpTool {
 
 enum ActionType {
   ARCHIVE
+  TRASH // EL-457: Move matching mail to Gmail Trash (30-day recoverable). NEVER permanent delete.
   LABEL
   REPLY
   SEND_EMAIL

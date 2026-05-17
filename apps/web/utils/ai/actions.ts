@@ -62,6 +62,8 @@ export const runActionFunction = async (options: {
   switch (type) {
     case ActionType.ARCHIVE:
       return archive(opts);
+    case ActionType.TRASH:
+      return trash(opts);
     case ActionType.LABEL:
       return label(opts);
     case ActionType.DRAFT_EMAIL:
@@ -102,6 +104,18 @@ const archive: ActionFunction<Record<string, unknown>> = async ({
   emailAccount,
 }) => {
   await client.archiveThread(email.threadId, emailAccount.email);
+};
+
+// EL-457: TRASH action moves the matched thread to Gmail Trash (30-day
+// recoverable). Phase 1 invariant: never call messages.delete (permanent).
+// trashThread on the EmailProvider implementation already adds the TRASH
+// label and removes INBOX; never permanent-deletes.
+const trash: ActionFunction<Record<string, unknown>> = async ({
+  client,
+  email,
+  emailAccount,
+}) => {
+  await client.trashThread(email.threadId, emailAccount.email, "automation");
 };
 
 const label: ActionFunction<{

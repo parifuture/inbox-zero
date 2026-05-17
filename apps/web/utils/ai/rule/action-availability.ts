@@ -26,6 +26,10 @@ export function getAvailableActionsForRuleEditor({
     ActionType.LABEL,
     ...(supportsMoveFolder ? [ActionType.MOVE_FOLDER] : []),
     ActionType.ARCHIVE,
+    // EL-457: TRASH is rendered after ARCHIVE so the rule editor groups
+    // 'remove from inbox' actions together. TRASH = move to Gmail Trash
+    // (30-day recoverable). The rule executor never calls messages.delete.
+    ActionType.TRASH,
     ActionType.MARK_READ,
     ...(showsDraftReplyOption ? [ActionType.DRAFT_EMAIL] : []),
     ...getAvailableSendActions(existingActionTypes),

@@ -127,12 +127,14 @@ export const POST = withEmailProvider(
     const hasArchiveAction = rule.actions.some(
       (a) => a.type === ActionType.ARCHIVE,
     );
+    const hasTrashAction = rule.actions.some(
+      (a) => a.type === ActionType.TRASH,
+    );
 
-    // MVP: only ARCHIVE is applied retroactively. Other action types are
-    // forward-looking by design (LABEL/MARK_READ/DIGEST etc.). We return a
-    // clean 200 with applied=false so the UI can show "no historical action
-    // applied" instead of pretending we did something.
-    if (!hasArchiveAction) {
+    // EL-454/EL-457: TRASH takes precedence when both are set on the rule.
+    // ARCHIVE-only and TRASH-only paths are both supported. Other action
+    // types (LABEL/MARK_READ/DIGEST etc.) are forward-looking by design.
+    if (!hasArchiveAction && !hasTrashAction) {
       return NextResponse.json<ApplyHistoricalRuleResponse>(
         {
           applied: false,
@@ -148,6 +150,7 @@ export const POST = withEmailProvider(
 
     const query = buildArchiveQuery(senderEmail);
     let archived = 0;
+    let trashed = 0;
     let pageToken: string | undefined;
 
     do {
@@ -160,22 +163,46 @@ export const POST = withEmailProvider(
       const ids = messages.map((m) => m.id).filter(Boolean);
       if (ids.length > 0) {
         for (const slice of chunk(ids, BATCH_MODIFY_CHUNK_SIZE)) {
-          await runGmailOp(
-            () =>
-              gmail.users.messages.batchModify({
-                userId: "me",
-                requestBody: {
-                  ids: slice,
-                  removeLabelIds: [GmailLabel.INBOX],
-                },
-              }),
-            {
-              op: "rule_apply_historical_archive",
-              targetId: `rule:${ruleId}:sender:${senderEmail}:${slice.length}`,
-              downgradeNotFound: true,
-            },
-          );
-          archived += slice.length;
+          if (hasTrashAction) {
+            // TRASH path: addLabelIds:[TRASH], removeLabelIds:[INBOX].
+            // Phase 1 invariant: NEVER messages.delete. 30-day recovery in
+            // Gmail Trash.
+            await runGmailOp(
+              () =>
+                gmail.users.messages.batchModify({
+                  userId: "me",
+                  requestBody: {
+                    ids: slice,
+                    addLabelIds: [GmailLabel.TRASH],
+                    removeLabelIds: [GmailLabel.INBOX],
+                  },
+                }),
+              {
+                op: "rule_apply_historical_trash",
+                targetId: `rule:${ruleId}:sender:${senderEmail}:${slice.length}`,
+                downgradeNotFound: true,
+              },
+            );
+            trashed += slice.length;
+          } else {
+            // ARCHIVE path: removeLabelIds:[INBOX] only. No TRASH label.
+            await runGmailOp(
+              () =>
+                gmail.users.messages.batchModify({
+                  userId: "me",
+                  requestBody: {
+                    ids: slice,
+                    removeLabelIds: [GmailLabel.INBOX],
+                  },
+                }),
+              {
+                op: "rule_apply_historical_archive",
+                targetId: `rule:${ruleId}:sender:${senderEmail}:${slice.length}`,
+                downgradeNotFound: true,
+              },
+            );
+            archived += slice.length;
+          }
         }
       }
 
@@ -186,12 +213,13 @@ export const POST = withEmailProvider(
       ruleId,
       senderEmail,
       archived,
+      trashed,
     });
 
     return NextResponse.json<ApplyHistoricalRuleResponse>({
       applied: true,
       archived,
-      trashed: 0,
+      trashed,
     });
   },
 );

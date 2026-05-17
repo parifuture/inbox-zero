@@ -53,18 +53,16 @@ export function PlanBadge(props: { plan?: Plan; provider: string }) {
             </div>
           ) : null}
           <div className="mt-4 space-y-2">
-            {sortActionsByPriority(plan.actionItems || []).map((action, i) => {
-              return (
-                <div key={i}>
-                  <Badge
-                    color={getActionColor(action.type)}
-                    className="whitespace-pre-wrap"
-                  >
-                    {getActionMessage(action, provider)}
-                  </Badge>
-                </div>
-              );
-            })}
+            {sortActionsByPriority(plan.actionItems || []).map((action, i) => (
+              <div key={i}>
+                <Badge
+                  color={getActionColor(action.type)}
+                  className="whitespace-pre-wrap"
+                >
+                  {getActionMessage(action, provider)}
+                </Badge>
+              </div>
+            ))}
           </div>
         </div>
       }
@@ -89,6 +87,8 @@ function getActionLabel(type: ActionType, provider: string) {
       return terminology.label.action;
     case ActionType.ARCHIVE:
       return "Archive";
+    case ActionType.TRASH:
+      return "Trash";
     case ActionType.FORWARD:
       return "Forward";
     case ActionType.REPLY:
@@ -145,6 +145,10 @@ export function getActionColor(actionType: ActionType): Color {
     case ActionType.ARCHIVE:
     case ActionType.MARK_READ:
       return "yellow";
+    case ActionType.TRASH:
+      // EL-457: TRASH renders red — it's a destructive-feeling action even
+      // though it's recoverable for 30 days.
+      return "red";
     case ActionType.LABEL:
       return "blue";
     case ActionType.MOVE_FOLDER:
@@ -178,6 +182,8 @@ function getPlanColor(plan: Plan | null, executed: boolean): Color {
       return "blue";
     case ActionType.ARCHIVE:
       return "yellow";
+    case ActionType.TRASH:
+      return "red";
     case ActionType.LABEL:
       return "purple";
     default:
