@@ -131,6 +131,12 @@ export const useNavigation = () => {
         icon: ArchiveIcon,
       },
       {
+        name: "Senders",
+        href: prefixPath(currentEmailAccountId, "/senders"),
+        icon: UserCheckIcon,
+        beta: true,
+      },
+      {
         name: "Analytics",
         href: prefixPath(currentEmailAccountId, "/stats"),
         icon: BarChartBigIcon,
