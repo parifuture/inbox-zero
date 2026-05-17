@@ -207,7 +207,14 @@ export async function aiProcessAssistantChat({
                 : ""),
           },
         ]
-      : [];
+      : context && context.type === "sender-rule"
+        ? [
+            {
+              role: "user" as const,
+              content: formatSenderRuleHiddenContext(context),
+            },
+          ]
+        : [];
 
   const contextMessages = [
     ...inboxContextMessage,
@@ -456,6 +463,34 @@ function formatSerializedMatchMetadata(
   });
 }
 
+function formatSenderRuleHiddenContext(
+  context: Extract<MessageContext, { type: "sender-rule" }>,
+) {
+  const samples = context.sampleMessages.length
+    ? context.sampleMessages
+        .slice(0, 20)
+        .map(
+          (m, i) => `${i + 1}. Subject: ${m.subject}\n   Snippet: ${m.snippet}`,
+        )
+        .join("\n")
+    : "(no sample messages available)";
+
+  const labels = context.existingLabels.length
+    ? context.existingLabels.join(", ")
+    : "(no existing Gmail labels on this sender)";
+
+  return (
+    "Hidden context for the user's request (do not repeat this to the user verbatim):\n\n" +
+    `You are helping the user create a Rule that is permanently scoped to mail from <${context.senderEmail}>. ` +
+    "This sender lock is enforced server-side: the resulting Rule will carry lockedToSenderId=<sender> and the from-condition cannot be edited later. " +
+    "Treat the sender as a fixed input to the rule \u2014 do not propose conditions that broaden the scope to other senders, and do not ask the user which sender to apply this to. " +
+    "You may propose a single Rule with branched conditions/actions covering multiple intents (e.g., 'keep receipts, archive everything else'); they all stay scoped to this one sender.\n\n" +
+    `<sender>${context.senderEmail}</sender>\n\n` +
+    `<sample-messages count="${context.sampleMessages.length}">\n${samples}\n</sample-messages>\n\n` +
+    `<existing-gmail-labels>${labels}</existing-gmail-labels>`
+  );
+}
+
 function formatFixRuleExpectedOutcome(context: MessageContext) {
   if (context.type !== "fix-rule") return "";
 
@@ -496,7 +531,7 @@ function getChatProviderOptionsForCaching({ chatId }: { chatId?: string }) {
 }
 
 function isConversationStatusFixContext(
-  context: MessageContext,
+  context: Extract<MessageContext, { type: "fix-rule" }>,
   expectedSystemType: SystemType | null,
 ) {
   return (
@@ -511,7 +546,7 @@ async function getExpectedFixContextSystemTypeSafe({
   emailAccountId,
   logger,
 }: {
-  context: MessageContext;
+  context: Extract<MessageContext, { type: "fix-rule" }>;
   emailAccountId: string;
   logger: Logger;
 }): Promise<SystemType | null> {
@@ -532,7 +567,7 @@ async function getExpectedFixContextSystemType({
   context,
   emailAccountId,
 }: {
-  context: MessageContext;
+  context: Extract<MessageContext, { type: "fix-rule" }>;
   emailAccountId: string;
 }): Promise<SystemType | null> {
   if (context.expected === "new" || context.expected === "none") return null;
