@@ -120,6 +120,7 @@ export function Rules({
         subject: null,
         body: null,
         promptText: null,
+        lockedToSenderId: null,
       };
     });
 
