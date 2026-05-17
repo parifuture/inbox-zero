@@ -337,8 +337,15 @@ function ChatMessagesView({
             {context ? (
               <div className="mb-2 flex items-center gap-2">
                 <span className="inline-flex items-center gap-2 rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                  Fix: {context.message.headers.subject.slice(0, 60)}
-                  {context.message.headers.subject.length > 60 ? "..." : ""}
+                  {context.type === "fix-rule" ? (
+                    <>
+                      Fix: {context.message.headers.subject.slice(0, 60)}
+                      {context.message.headers.subject.length > 60 ? "..." : ""}
+                    </>
+                  ) : (
+                    // EL-449: per-sender chat surface (sender-locked rule).
+                    <>Sender: {context.senderEmail}</>
+                  )}
                   <button
                     type="button"
                     aria-label="Remove context"
