@@ -19,11 +19,19 @@ export const createRuleTool = ({
   emailAccountId,
   provider,
   logger,
+  senderLockEmail,
 }: {
   email: string;
   emailAccountId: string;
   provider: string;
   logger: Logger;
+  /**
+   * EL-451: when set (per-sender chat surface), every rule created by this
+   * tool is locked to this sender — `condition.static.from` is overridden
+   * server-side, and `Rule.lockedToSenderId` is persisted. EL-452 then
+   * blocks future updates from changing the from-condition.
+   */
+  senderLockEmail?: string | null;
 }) =>
   tool({
     description: "Create a new rule.",
@@ -32,9 +40,23 @@ export const createRuleTool = ({
       trackRuleToolCall({ tool: "create_rule", email, logger });
 
       try {
+        // Sender-lock override: if this chat is scoped to a sender, ignore
+        // whatever `from` the LLM produced and pin to the sender. This
+        // matches the EL-439 spec: the from-condition is locked, never
+        // editable, and the rule must carry lockedToSenderId.
+        const effectiveCondition = senderLockEmail
+          ? {
+              ...condition,
+              static: {
+                ...(condition.static ?? {}),
+                from: senderLockEmail,
+              },
+            }
+          : condition;
+
         const overlapConflict = await findSenderOnlyOverlapConflict({
           emailAccountId,
-          condition,
+          condition: effectiveCondition,
         });
 
         if (overlapConflict) {
@@ -47,7 +69,7 @@ export const createRuleTool = ({
         }
 
         const resultPayload = buildCreateRuleSchemaFromChatToolInput(
-          { name, condition, actions },
+          { name, condition: effectiveCondition, actions },
           provider,
         );
 
@@ -61,6 +83,9 @@ export const createRuleTool = ({
             requiresConfirmation: true as const,
             confirmationState: "pending" as const,
             riskMessages,
+            // EL-451: surface the lock to the UI so the preview card can
+            // render the 🔒 sender-lock badge + Save & activate flow.
+            lockedToSenderId: senderLockEmail ?? null,
           };
         }
 
@@ -71,9 +96,14 @@ export const createRuleTool = ({
           runOnThreads: true,
           logger,
           enablement: { source: "chat" },
+          lockedToSenderId: senderLockEmail ?? null,
         });
 
-        return { success: true, ruleId: rule.id };
+        return {
+          success: true,
+          ruleId: rule.id,
+          lockedToSenderId: senderLockEmail ?? null,
+        };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 

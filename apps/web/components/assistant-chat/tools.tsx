@@ -856,6 +856,9 @@ export function PendingCreateRuleToolCard({
   const isProcessing = confirmationState === "processing";
   const ruleIdFromOutput = getOutputField<string>(output, "ruleId");
   const ruleId = ruleIdOverride || ruleIdFromOutput;
+  // EL-451: surface the sender-lock badge + Save & activate label.
+  const lockedToSenderId =
+    getOutputField<string | null>(output, "lockedToSenderId") ?? null;
 
   const handleConfirm = async () => {
     setIsConfirming(true);
@@ -897,6 +900,7 @@ export function PendingCreateRuleToolCard({
       onConfirm={handleConfirm}
       riskMessages={riskMessages}
       ruleId={ruleId}
+      lockedToSenderId={lockedToSenderId}
     />
   );
 }
@@ -1064,6 +1068,7 @@ function PendingCreateRuleCardContent({
   onConfirm,
   riskMessages,
   ruleId,
+  lockedToSenderId,
 }: {
   args: CreateRuleTool["input"];
   disableConfirm: boolean;
@@ -1072,6 +1077,13 @@ function PendingCreateRuleCardContent({
   onConfirm: () => void;
   riskMessages: string[];
   ruleId?: string;
+  /**
+   * EL-451: when set, this rule will be persisted with
+   * `Rule.lockedToSenderId = lockedToSenderId`. The card surfaces a
+   * 🔒 sender-lock badge so the user knows this rule is permanently
+   * scoped to that sender (per EL-439 / EL-452).
+   */
+  lockedToSenderId?: string | null;
 }) {
   if (ruleId) {
     return <CreatedRuleToolCard args={args} ruleId={ruleId} />;
@@ -1079,24 +1091,56 @@ function PendingCreateRuleCardContent({
 
   return (
     <div className="space-y-3">
-      <Alert variant="default" className="border-amber-500/40 bg-amber-500/5">
-        <AlertTriangleIcon className="size-4 text-amber-600" />
-        <AlertTitle>Review before enabling</AlertTitle>
-        <AlertDescription className="space-y-2 text-sm">
-          <p>
-            This rule can send email automatically. Review it before enabling.
-          </p>
-          {riskMessages.length === 1 ? (
-            <p className="text-muted-foreground">{riskMessages[0]}</p>
-          ) : riskMessages.length > 1 ? (
-            <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
-              {riskMessages.map((message) => (
-                <li key={message}>{message}</li>
-              ))}
-            </ul>
-          ) : null}
-        </AlertDescription>
-      </Alert>
+      {lockedToSenderId ? (
+        <Alert variant="default" className="border-blue-500/40 bg-blue-500/5">
+          <AlertTitle className="flex items-center gap-2">
+            <span aria-hidden>🔒</span>
+            Sender-locked rule
+          </AlertTitle>
+          <AlertDescription className="text-sm text-muted-foreground">
+            This rule will be permanently scoped to{" "}
+            <span className="font-mono">{lockedToSenderId}</span>. The sender
+            condition cannot be edited later — you can only delete the rule or
+            edit other fields from this sender's chat.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {riskMessages.length > 0 ? (
+        <Alert variant="default" className="border-amber-500/40 bg-amber-500/5">
+          <AlertTriangleIcon className="size-4 text-amber-600" />
+          <AlertTitle>Review before enabling</AlertTitle>
+          <AlertDescription className="space-y-2 text-sm">
+            <p>
+              This rule can send email automatically. Review it before enabling.
+            </p>
+            {riskMessages.length === 1 ? (
+              <p className="text-muted-foreground">{riskMessages[0]}</p>
+            ) : (
+              <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                {riskMessages.map((message) => (
+                  <li key={message}>{message}</li>
+                ))}
+              </ul>
+            )}
+          </AlertDescription>
+        </Alert>
+      ) : !lockedToSenderId ? (
+        // Original behavior: even when there are no explicit risk messages,
+        // the non-locked path always rendered the amber "Review before
+        // enabling" alert because outboundActionsNeedChatRiskConfirmation
+        // gates entry to this card. Preserve that to avoid a surprise UI
+        // regression for non-sender-locked rules.
+        <Alert variant="default" className="border-amber-500/40 bg-amber-500/5">
+          <AlertTriangleIcon className="size-4 text-amber-600" />
+          <AlertTitle>Review before enabling</AlertTitle>
+          <AlertDescription className="space-y-2 text-sm">
+            <p>
+              This rule can send email automatically. Review it before enabling.
+            </p>
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       <CreatedRuleToolCard args={args} preview />
 
@@ -1114,6 +1158,8 @@ function PendingCreateRuleCardContent({
               <Loader2 className="size-4 animate-spin" />
               Creating...
             </>
+          ) : lockedToSenderId ? (
+            "Save & activate"
           ) : (
             "Create & enable rule"
           )}
