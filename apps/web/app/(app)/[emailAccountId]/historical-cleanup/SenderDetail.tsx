@@ -5,11 +5,15 @@ import {
   ArchiveIcon,
   InboxIcon,
   MailIcon,
+  MessageCircleIcon,
   RefreshCwIcon,
   SendIcon,
   Trash2Icon,
   AlertTriangleIcon,
 } from "lucide-react";
+import { useSidebar } from "@/components/ui/sidebar";
+import { useChat } from "@/providers/ChatProvider";
+import type { MessageContext } from "@/app/api/chat/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -102,12 +106,19 @@ export function SenderDetail({
   onDelete,
   isArchiving,
   isDeleting,
+  autoOpenChatForSenderEmail = null,
 }: {
   sender: Sender | null;
   onArchive: (senderEmails: string[]) => void;
   onDelete: (senderEmails: string[]) => void;
   isArchiving: boolean;
   isDeleting: boolean;
+  /**
+   * EL-450 deep-link: when set to a sender email that matches the currently
+   * selected sender, auto-opens the sender-rule chat once messages have
+   * loaded. Set by HistoricalCleanup from the `?openChat=true` query param.
+   */
+  autoOpenChatForSenderEmail?: string | null;
 }) {
   const [bypassCache, setBypassCache] = useState(false);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -127,6 +138,66 @@ export function SenderDetail({
     sender?.senderEmail ?? null,
     { bypassCache, cursor },
   );
+
+  // EL-450: per-sender AI rule chat. Seeds ChatProvider with a `sender-rule`
+  // MessageContext (EL-449) and opens the chat sidebar. The resulting Rule
+  // will be sender-locked server-side (EL-452).
+  const { setOpen } = useSidebar();
+  const { setContext, setInput, setNewChat } = useChat();
+
+  const handleCreateRuleChat = () => {
+    if (!sender) return;
+    const samples = (accumulated.length ? accumulated : (data?.messages ?? []))
+      .slice(0, 20)
+      .map((m) => ({
+        subject: m.subject ?? "(no subject)",
+        snippet: (m.snippet ?? "").slice(0, 500),
+      }));
+    // Best-effort: collapse labelStates to a stable de-duplicated list. This
+    // is a coarse approximation of "existing Gmail labels" until we surface
+    // real label-name data from Gmail (follow-up).
+    const existingLabels = Array.from(
+      new Set(
+        (accumulated.length ? accumulated : (data?.messages ?? []))
+          .map((m) => m.labelState)
+          .filter((v): v is NonNullable<typeof v> => Boolean(v)),
+      ),
+    );
+    const context: MessageContext = {
+      type: "sender-rule",
+      senderEmail: sender.senderEmail,
+      sampleMessages: samples,
+      existingLabels,
+    };
+    setNewChat();
+    setContext(context);
+    setInput(
+      `Help me write a rule for mail from ${sender.senderEmail}. ` +
+        "Walk me through the options based on what they actually send me.",
+    );
+    setOpen((arr) => [...arr, "chat-sidebar"]);
+  };
+
+  // EL-450: auto-open the chat when arriving via deep-link
+  // (?sender=<email>&openChat=true). Wait until at least the first page of
+  // sender messages has loaded so the seeded sampleMessages are not empty.
+  const autoOpenedForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!autoOpenChatForSenderEmail) return;
+    if (!sender) return;
+    if (
+      sender.senderEmail.toLowerCase() !==
+      autoOpenChatForSenderEmail.toLowerCase()
+    )
+      return;
+    if (autoOpenedForRef.current === sender.senderEmail) return;
+    if (!data && accumulated.length === 0) return; // wait for messages
+    autoOpenedForRef.current = sender.senderEmail;
+    handleCreateRuleChat();
+    // handleCreateRuleChat is stable for the duration of this sender (closes
+    // over current sender + accumulated/data), but lint doesn't know that.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenChatForSenderEmail, sender?.senderEmail, data, accumulated]);
 
   // Reset accumulator when the selected sender changes.
   const lastSenderRef = useRef<string | null>(null);
@@ -219,6 +290,15 @@ export function SenderDetail({
               className={`size-4 mr-2 ${isValidating ? "animate-spin" : ""}`}
             />
             Refresh
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCreateRuleChat}
+            title="Open AI chat to create a rule scoped to this sender"
+          >
+            <MessageCircleIcon className="size-4 mr-2" />
+            Create rule for this sender
           </Button>
           <Button
             size="sm"
