@@ -17,6 +17,12 @@ import type { MessageContext } from "@/app/api/chat/validation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -257,12 +263,12 @@ export function SenderDetail({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="border-b p-4 flex items-start justify-between gap-4">
-        <div>
-          <div className="font-semibold text-base">
+      <div className="border-b p-4 flex items-start justify-between gap-4 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-base truncate">
             {sender.senderName || sender.senderEmail}
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div className="text-sm text-muted-foreground truncate">
             {sender.senderEmail}
           </div>
           <div className="flex gap-2 mt-2 text-xs items-center flex-wrap">
@@ -281,53 +287,65 @@ export function SenderDetail({
             ) : null}
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isValidating}
-            title="Force a fresh Gmail fetch"
-          >
-            <RefreshCwIcon
-              className={`size-4 mr-2 ${isValidating ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCreateRuleChat}
-            title="Open AI chat to create a rule scoped to this sender"
-          >
-            <MessageCircleIcon className="size-4 mr-2" />
-            Create rule for this sender
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => onArchive([sender.senderEmail])}
-            disabled={isArchiving}
-          >
-            <ArchiveIcon className="size-4 mr-2" />
-            Archive all
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => {
-              if (sender.count >= 10) {
-                setConfirmDeleteOpen(true);
-              } else {
-                onDelete([sender.senderEmail]);
-              }
-            }}
-            disabled={isDeleting}
-            title="Move all of this sender's emails to Trash. Recoverable for 30 days in Gmail."
-          >
-            <Trash2Icon className="size-4 mr-2" />
-            Delete
-          </Button>
-        </div>
+        <TooltipProvider delayDuration={200}>
+          <div className="flex gap-2 flex-wrap shrink-0">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRefresh}
+                  disabled={isValidating}
+                  aria-label="Refresh"
+                >
+                  <RefreshCwIcon
+                    className={`size-4 ${isValidating ? "animate-spin" : ""}`}
+                  />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Force a fresh Gmail fetch</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCreateRuleChat}
+                  aria-label="Create rule for this sender"
+                >
+                  <MessageCircleIcon className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Open AI chat to create a rule scoped to this sender
+              </TooltipContent>
+            </Tooltip>
+            <Button
+              size="sm"
+              onClick={() => onArchive([sender.senderEmail])}
+              disabled={isArchiving}
+            >
+              <ArchiveIcon className="size-4 mr-2" />
+              Archive all
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => {
+                if (sender.count >= 10) {
+                  setConfirmDeleteOpen(true);
+                } else {
+                  onDelete([sender.senderEmail]);
+                }
+              }}
+              disabled={isDeleting}
+              title="Move all of this sender's emails to Trash. Recoverable for 30 days in Gmail."
+            >
+              <Trash2Icon className="size-4 mr-2" />
+              Delete all
+            </Button>
+          </div>
+        </TooltipProvider>
       </div>
 
       <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
