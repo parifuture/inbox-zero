@@ -193,6 +193,10 @@ export function ActionSummaryCard({
       summaryContent = "Archive";
       break;
 
+    case ActionType.TRASH:
+      summaryContent = "Move to Trash";
+      break;
+
     case ActionType.MARK_READ:
       summaryContent = "Mark as read";
       break;

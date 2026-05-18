@@ -85,6 +85,7 @@ export const createRuleActionSchema = (
 
   const actionSchemas: [z.ZodTypeAny, z.ZodTypeAny, ...z.ZodTypeAny[]] = [
     createActionObjectSchema(ActionType.ARCHIVE, optionalFieldsSchema),
+    createActionObjectSchema(ActionType.TRASH, optionalFieldsSchema),
     createActionObjectSchema(
       ActionType.LABEL,
       createRequiredLabelFieldsSchema(provider),
