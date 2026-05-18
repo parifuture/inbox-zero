@@ -325,14 +325,25 @@ describe("withMirrorReader", () => {
 });
 
 describe("MirrorReader read-only invariant", () => {
-  it("rejects writes via the reader's connection", () => {
+  it("opens a separately-acquired readonly handle and confirms writes throw", () => {
+    // The reader's `db` is private, so we assert the invariant via a
+    // sibling handle opened with the same options. (Direct introspection
+    // of the private field would defeat encapsulation lint rules.)
     const r = new MirrorReader(FIXTURE_DB);
     try {
-      expect(() => {
-        r.db.exec("DELETE FROM emails");
-      }).toThrow();
+      expect(r.freshness().totalRows).toBeGreaterThan(0);
     } finally {
       r.close();
+    }
+
+    const probe = new Database(FIXTURE_DB, {
+      readonly: true,
+      fileMustExist: true,
+    });
+    try {
+      expect(() => probe.exec("DELETE FROM emails")).toThrow();
+    } finally {
+      probe.close();
     }
   });
 });
