@@ -214,6 +214,7 @@ model EmailAccount {
   senderDecisionAudits   SenderDecisionAudit[]
   senderDecisionJobs     SenderDecisionJob[]
   parityDecisions        ParityDecision[]
+  backfillRuns           BackfillRun[]
 
   historicalSenderScan HistoricalSenderScan?
   historicalSenders    HistoricalSender[]
@@ -1830,4 +1831,76 @@ model ParityDecision {
   @@index([emailAccountId, senderEmail])
   @@index([emailAccountId, createdAt])
   @@index([emailAccountId, stage])
+}
+
+// EL-468 / EL-470 — Smart Historical Backfill.
+//
+// Read source: ~/data/gmail-mirror/mirror.db (SQLite, FTS5, ~100k emails).
+// LLM (Bedrock Sonnet 4.7) evaluates one sender's full history per call,
+// returns disposition array. Decisions land here BEFORE Gmail execution
+// so the run is fully auditable, dry-runnable, and resumable.
+//
+// Status lifecycle:
+//   pending → evaluating → awaiting_execution → executing → done
+//                       ↘ stopped       ↘ stopped
+//                       ↘ error         ↘ error
+//
+// In dry-run mode (Phase 1 default), the worker stops at
+// `awaiting_execution` and the user must explicitly hit "Execute" in
+// the UI. Auto-execute (dryRun=false) is gated on Phase 2 trust.
+model BackfillRun {
+  id                String       @id @default(cuid())
+  emailAccountId    String
+  emailAccount      EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  status            String       @default("pending") // pending | evaluating | awaiting_execution | executing | done | error | stopped
+  ruleIds           String[] // subset of Rule.id the user picked at run start
+  dateFloor         DateTime? // null = go all the way back to first email
+  senderScope       String? // optional single-sender filter (lowercased email)
+  modelId           String // e.g. us.anthropic.claude-sonnet-4-7 — pinned per run for audit
+  dryRun            Boolean      @default(true)
+  totalSenders      Int          @default(0)
+  processedSenders  Int          @default(0)
+  totalDecisions    Int          @default(0)
+  executedDecisions Int          @default(0)
+  errorCount        Int          @default(0)
+  // Worker progress hint — last sender the evaluator was working on.
+  // Useful for "currently evaluating" UI string and resume-after-crash.
+  currentSender     String?
+  // Free-form last-error string surfaced in UI when status = error.
+  lastError         String?
+  createdAt         DateTime     @default(now())
+  startedAt         DateTime?
+  evaluatedAt       DateTime?
+  executedAt        DateTime?
+  completedAt       DateTime?
+
+  decisions BackfillDecision[]
+
+  @@index([emailAccountId, status])
+  @@index([emailAccountId, createdAt])
+}
+
+model BackfillDecision {
+  id             String      @id @default(cuid())
+  runId          String
+  run            BackfillRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  messageId      String // Gmail internal message id
+  threadId       String?
+  sender         String // canonicalized lowercase email
+  ruleId         String? // null when SKIP / no rule matched
+  action         String // ARCHIVE | TRASH | MARK_READ | LABEL | SKIP
+  labelName      String? // populated only when action = LABEL
+  reason         String // LLM's brief reasoning, truncated to ~500 chars at write time
+  confidence     String      @default("medium") // low | medium | high — LLM-reported
+  decidedAt      DateTime    @default(now())
+  // Set when the executor actually applies this decision against Gmail.
+  // Idempotency: re-running the executor SELECTs WHERE executedAt IS NULL,
+  // so a half-finished run resumes safely after a worker crash.
+  executedAt     DateTime?
+  executionError String? // populated on Gmail-side failure; run.errorCount += 1
+
+  @@index([runId, executedAt])
+  @@index([runId, sender])
+  @@index([runId, action])
+  @@index([messageId])
 }
