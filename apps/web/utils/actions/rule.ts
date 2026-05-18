@@ -1012,6 +1012,16 @@ async function getActionsFromCategoryAction({
         });
         break;
       }
+      case ActionType.TRASH: {
+        // EL-457 / EL-460: TRASH preserved through import path. Same shape
+        // as ARCHIVE (no fields). Executor uses users.threads.trash for
+        // proper Gmail Trash placement (EL-459).
+        actions.push({
+          type: ActionType.TRASH,
+          delayInMinutes: isDelayed ? ONE_WEEK_MINUTES : undefined,
+        });
+        break;
+      }
       default: {
         actions.push({ type: actionType.type });
       }

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { ActionType } from "@/generated/prisma/enums";
 import {
+  createRuleActionSchema,
   createRuleSchema,
   getAvailableActions,
   getExtraActions,
@@ -418,3 +419,72 @@ function buildRule(action: RuleActionFixture) {
     actions: [action],
   };
 }
+
+// ============================================================================
+// EL-460 regression guards
+// ============================================================================
+// Reported by Chotu (2026-05-17 19:05 PT). EL-457 added ActionType.TRASH
+// to the prisma enum, action-availability lists, and the rule editor UI —
+// but missed THIS file's discriminated-union Zod schema (createRuleActionSchema).
+// The chat tool's runtime validator therefore rejected any rule with a
+// TRASH action, and the LLM dutifully reported the rejection back to the
+// user as 'TRASH is not a valid rule action.'
+//
+// These tests pin every accepted action variant so a missing schema entry
+// can't slip past again.
+
+describe("createRuleActionSchema (EL-460 regression)", () => {
+  const provider = "google";
+  const schema = createRuleActionSchema(provider);
+
+  const cases: Array<{ type: ActionType; fields?: Record<string, unknown> }> = [
+    { type: ActionType.ARCHIVE },
+    { type: ActionType.TRASH }, // EL-460 anchor
+    { type: ActionType.LABEL, fields: { label: "Newsletters" } },
+    { type: ActionType.MARK_READ },
+    { type: ActionType.MARK_SPAM },
+    { type: ActionType.DIGEST },
+    { type: ActionType.DRAFT_EMAIL },
+    { type: ActionType.REPLY },
+    { type: ActionType.FORWARD, fields: { to: "you@example.com" } },
+    { type: ActionType.SEND_EMAIL, fields: { to: "you@example.com" } },
+    {
+      type: ActionType.CALL_WEBHOOK,
+      fields: { webhookUrl: "https://example.com/h" },
+    },
+  ];
+
+  it.each(cases)("accepts $type as a valid rule action", ({ type, fields }) => {
+    const parsed = schema.safeParse({
+      type,
+      fields: fields ?? null,
+      delayInMinutes: null,
+    });
+    if (!parsed.success) {
+      throw new Error(
+        `Action ${type} should be accepted but was rejected: ${JSON.stringify(parsed.error.issues)}`,
+      );
+    }
+  });
+
+  it("rejects an unknown action type (defence-in-depth)", () => {
+    const parsed = schema.safeParse({
+      type: "TOTALLY_FAKE_ACTION",
+      fields: null,
+      delayInMinutes: null,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("explicitly accepts a TRASH action with no fields (matches ARCHIVE shape)", () => {
+    const parsed = schema.safeParse({
+      type: ActionType.TRASH,
+      fields: null,
+      delayInMinutes: null,
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.type).toBe(ActionType.TRASH);
+    }
+  });
+});
