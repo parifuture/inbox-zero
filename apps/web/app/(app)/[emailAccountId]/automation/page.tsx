@@ -6,6 +6,7 @@ import prisma from "@/utils/prisma";
 import { History } from "@/app/(app)/[emailAccountId]/assistant/History";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Process } from "@/app/(app)/[emailAccountId]/assistant/Process";
+import { BackfillTab } from "@/app/(app)/[emailAccountId]/assistant/backfill/BackfillTab";
 import { PermissionsCheck } from "@/app/(app)/[emailAccountId]/PermissionsCheck";
 import { EmailProvider } from "@/providers/EmailProvider";
 import { ASSISTANT_ONBOARDING_COOKIE } from "@/utils/cookies";
@@ -35,6 +36,11 @@ const tabOptions = (emailAccountId: string) => [
     id: "test",
     label: "Test",
     href: `/${emailAccountId}/automation?tab=test`,
+  },
+  {
+    id: "backfill",
+    label: "Backfill",
+    href: `/${emailAccountId}/automation?tab=backfill`,
   },
   {
     id: "history",
@@ -128,6 +134,9 @@ export default async function AutomationPage({
             </TabsContent>
             <TabsContent value="test" className="mb-10">
               <Process />
+            </TabsContent>
+            <TabsContent value="backfill" className="mb-10">
+              <BackfillTab />
             </TabsContent>
             <TabsContent value="history" className="mb-10">
               <History />
