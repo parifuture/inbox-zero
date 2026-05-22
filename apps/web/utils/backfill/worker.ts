@@ -246,10 +246,10 @@ async function persistDecisions(args: {
 
   if (rows.length === 0) return 0;
 
-  // skipDuplicates so a re-run of evaluateRun doesn't crash on existing
-  // (runId, messageId) — we don't have a unique constraint there yet,
-  // but createMany is still the most efficient bulk insert and we'll
-  // dedupe at the executor layer.
+  // EL-484: skipDuplicates is now load-bearing — BackfillDecision has a
+  // @@unique([runId, messageId]) constraint, so a re-run of evaluateRun
+  // (e.g. after a process death) silently drops rows it has already
+  // written rather than crashing OR ballooning the audit log.
   const result = await prisma.backfillDecision.createMany({
     data: rows,
     skipDuplicates: true,

@@ -204,11 +204,32 @@ vi.mock("@/utils/prisma", () => {
         createMany: vi.fn(
           async ({
             data,
+            skipDuplicates,
           }: {
             data: Partial<Decision>[];
             skipDuplicates?: boolean;
           }) => {
+            // EL-484: simulate the @@unique([runId, messageId]) constraint.
+            // Postgres' INSERT ... ON CONFLICT DO NOTHING semantics: with
+            // skipDuplicates=true, rows whose (runId, messageId) already
+            // exist are silently dropped. Without skipDuplicates, attempting
+            // to insert a duplicate would throw — but the worker always
+            // passes skipDuplicates: true, so we don't model the throw path.
+            let inserted = 0;
             for (const d of data) {
+              if (skipDuplicates) {
+                let exists = false;
+                for (const existing of store.decisions.values()) {
+                  if (
+                    existing.runId === (d.runId ?? "_") &&
+                    existing.messageId === (d.messageId ?? "_")
+                  ) {
+                    exists = true;
+                    break;
+                  }
+                }
+                if (exists) continue;
+              }
               const id = genId("bd");
               store.decisions.set(id, {
                 id,
@@ -225,8 +246,9 @@ vi.mock("@/utils/prisma", () => {
                 executedAt: null,
                 executionError: null,
               });
+              inserted += 1;
             }
-            return { count: data.length };
+            return { count: inserted };
           },
         ),
         findMany: vi.fn(
@@ -552,6 +574,90 @@ describe("evaluateRun", () => {
     expect(decisions).toHaveLength(2);
     expect(decisions.every((d) => d.sender === RECEIPTS)).toBe(true);
   });
+
+  it(
+    "EL-484: re-running evaluateRun for the same run does not bloat " +
+      "the audit table — relies on @@unique([runId, messageId])",
+    async () => {
+      const run = await createRunInStore({ ruleIds: ["rule-1"] });
+      (
+        prisma.rule.findMany as unknown as ReturnType<typeof vi.fn>
+      ).mockResolvedValue([fakeRule]);
+
+      // First-pass evaluator: emits ARCHIVE for every email; resets run
+      // back to a re-evaluable state on completion to simulate a worker
+      // restart that found the row in 'evaluating'.
+      const evaluate = vi.fn(
+        async (args: {
+          emails: { id: string }[];
+        }): Promise<EvaluatorDecision[]> =>
+          args.emails.map((e) => ({
+            messageId: e.id,
+            action: "ARCHIVE" as const,
+            ruleId: "rule-1",
+            reason: "newsletter",
+            confidence: "high" as const,
+          })),
+      );
+
+      // Pass 1
+      await evaluateRun(run.id, {
+        mirrorPath: FIXTURE_DB,
+        evaluate: evaluate as unknown as NonNullable<
+          Parameters<typeof evaluateRun>[1]
+        >["evaluate"],
+        loadEmailAccount: async () => fakeEmailAccount,
+      });
+
+      const firstPassRows = [...store.decisions.values()].filter(
+        (d) => d.runId === run.id,
+      );
+      const firstPassMessageIds = new Set(
+        firstPassRows.map((d) => d.messageId),
+      );
+      expect(firstPassRows).toHaveLength(5);
+      expect(firstPassMessageIds.size).toBe(5);
+
+      // Simulate a process death + restart: flip status back to a
+      // re-evaluable state and call evaluateRun again. With the unique
+      // constraint in place (mocked above to honor skipDuplicates),
+      // every (runId, messageId) row is dropped silently.
+      const r = store.runs.get(run.id);
+      if (r) {
+        store.runs.set(run.id, {
+          ...r,
+          status: "evaluating",
+          processedSenders: 0,
+          totalDecisions: 0,
+          evaluatedAt: null,
+        });
+      }
+
+      await evaluateRun(run.id, {
+        mirrorPath: FIXTURE_DB,
+        evaluate: evaluate as unknown as NonNullable<
+          Parameters<typeof evaluateRun>[1]
+        >["evaluate"],
+        loadEmailAccount: async () => fakeEmailAccount,
+      });
+
+      const secondPassRows = [...store.decisions.values()].filter(
+        (d) => d.runId === run.id,
+      );
+      // No new rows were inserted — the unique constraint suppressed them.
+      expect(secondPassRows).toHaveLength(5);
+      // Every (runId, messageId) pair is unique.
+      const seen = new Set<string>();
+      for (const d of secondPassRows) {
+        const key = `${d.runId}::${d.messageId}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+      }
+      // Evaluator was called twice (once per pass) — confirms that the
+      // dedup happens at the persist layer, not at the evaluator entry.
+      expect(evaluate).toHaveBeenCalledTimes(4); // 2 senders × 2 passes
+    },
+  );
 });
 
 function fakeProvider() {

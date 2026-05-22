@@ -310,16 +310,16 @@ model Digest {
 }
 
 model DigestItem {
-  id          String          @id @default(cuid())
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  messageId   String
-  threadId    String
-  content     String          @db.Text
-  digestId    String
-  digest      Digest          @relation(fields: [digestId], references: [id], onDelete: Cascade)
-  actionId    String?
-  action      ExecutedAction? @relation(fields: [actionId], references: [id], onDelete: Cascade)
+  id        String          @id @default(cuid())
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  messageId String
+  threadId  String
+  content   String          @db.Text
+  digestId  String
+  digest    Digest          @relation(fields: [digestId], references: [id], onDelete: Cascade)
+  actionId  String?
+  action    ExecutedAction? @relation(fields: [actionId], references: [id], onDelete: Cascade)
 
   @@unique([digestId, threadId, messageId])
   @@index([actionId])
@@ -1899,6 +1899,10 @@ model BackfillDecision {
   executedAt     DateTime?
   executionError String? // populated on Gmail-side failure; run.errorCount += 1
 
+  // EL-484: deduplicate decisions across re-runs of evaluateRun for the same
+  // run + message. Without this, createMany({ skipDuplicates: true }) is a
+  // no-op and a process-death-then-resume bloats the audit log with copies.
+  @@unique([runId, messageId])
   @@index([runId, executedAt])
   @@index([runId, sender])
   @@index([runId, action])
