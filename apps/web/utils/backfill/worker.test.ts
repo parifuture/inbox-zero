@@ -46,6 +46,8 @@ type Run = {
   senderScope: string | null;
   modelId: string;
   dryRun: boolean;
+  includeSelfSent: boolean;
+  excludedSenders: string[];
   totalSenders: number;
   processedSenders: number;
   totalDecisions: number;
@@ -122,6 +124,8 @@ vi.mock("@/utils/prisma", () => {
             senderScope: data.senderScope ?? null,
             modelId: data.modelId ?? "test-model",
             dryRun: data.dryRun ?? true,
+            includeSelfSent: data.includeSelfSent ?? false,
+            excludedSenders: data.excludedSenders ?? [],
             totalSenders: 0,
             processedSenders: 0,
             totalDecisions: 0,
@@ -659,6 +663,97 @@ describe("evaluateRun", () => {
       expect(evaluate).toHaveBeenCalledTimes(4); // 2 senders × 2 passes
     },
   );
+
+  // EL-483 — end-to-end: the worker injects the EmailAccount's own email
+  // into the sender filter by default (`includeSelfSent=false`), so a
+  // backfill run can't act on the user's own outbox. When the user opts
+  // in via `includeSelfSent=true`, the same sender is back in scope.
+  it("EL-483: respects includeSelfSent flag end-to-end with a mock account", async () => {
+    // Two scenarios on the same fixture mirror, where NEWSLETTER is
+    // the user's "own" email (stand-in for pari.future@gmail.com).
+    const ownEmailAccount = {
+      ...fakeEmailAccount,
+      email: NEWSLETTER, // the would-be self-sent address
+    } as typeof fakeEmailAccount;
+
+    // Scenario 1 — default (includeSelfSent=false): NEWSLETTER is
+    // excluded; only RECEIPTS gets evaluated.
+    const runDefault = await createRunInStore({ ruleIds: ["rule-1"] });
+    (
+      prisma.rule.findMany as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([fakeRule]);
+    const evaluateDefault = vi.fn(
+      async (args: {
+        emails: { id: string }[];
+      }): Promise<EvaluatorDecision[]> =>
+        args.emails.map((e) => ({
+          messageId: e.id,
+          action: "ARCHIVE" as const,
+          ruleId: "rule-1",
+          reason: "newsletter",
+          confidence: "high" as const,
+        })),
+    );
+    await evaluateRun(runDefault.id, {
+      mirrorPath: FIXTURE_DB,
+      evaluate: evaluateDefault as unknown as NonNullable<
+        Parameters<typeof evaluateRun>[1]
+      >["evaluate"],
+      loadEmailAccount: async () => ownEmailAccount,
+    });
+
+    const updatedDefault = store.runs.get(runDefault.id);
+    expect(updatedDefault?.status).toBe("awaiting_execution");
+    // Only RECEIPTS gets walked — NEWSLETTER is excluded as self.
+    expect(updatedDefault?.totalSenders).toBe(1);
+    expect(updatedDefault?.processedSenders).toBe(1);
+    // 2 receipts → 2 decisions; NEWSLETTER's 3 emails are NOT decided.
+    expect(updatedDefault?.totalDecisions).toBe(2);
+    // Forensic record persisted server-side.
+    expect(updatedDefault?.excludedSenders).toEqual([NEWSLETTER]);
+    const decisionsDefault = [...store.decisions.values()].filter(
+      (d) => d.runId === runDefault.id,
+    );
+    expect(decisionsDefault.every((d) => d.sender === RECEIPTS)).toBe(true);
+
+    // Scenario 2 — explicit opt-in (includeSelfSent=true): both
+    // senders get evaluated. The worker passes empty excludedSenders.
+    const runOptIn = await createRunInStore({ ruleIds: ["rule-1"] });
+    // Flip the flag on the persisted run row so evaluateRun reads it.
+    const r = store.runs.get(runOptIn.id);
+    if (r) {
+      store.runs.set(runOptIn.id, { ...r, includeSelfSent: true } as never);
+    }
+    const evaluateOptIn = vi.fn(
+      async (args: {
+        emails: { id: string }[];
+      }): Promise<EvaluatorDecision[]> =>
+        args.emails.map((e) => ({
+          messageId: e.id,
+          action: "ARCHIVE" as const,
+          ruleId: "rule-1",
+          reason: "newsletter",
+          confidence: "high" as const,
+        })),
+    );
+    await evaluateRun(runOptIn.id, {
+      mirrorPath: FIXTURE_DB,
+      evaluate: evaluateOptIn as unknown as NonNullable<
+        Parameters<typeof evaluateRun>[1]
+      >["evaluate"],
+      loadEmailAccount: async () => ownEmailAccount,
+    });
+
+    const updatedOptIn = store.runs.get(runOptIn.id);
+    expect(updatedOptIn?.status).toBe("awaiting_execution");
+    // Both senders walked.
+    expect(updatedOptIn?.totalSenders).toBe(2);
+    expect(updatedOptIn?.processedSenders).toBe(2);
+    // 3 newsletters + 2 receipts = 5 decisions.
+    expect(updatedOptIn?.totalDecisions).toBe(5);
+    // No senders excluded when the user opted in.
+    expect(updatedOptIn?.excludedSenders).toEqual([]);
+  });
 });
 
 function fakeProvider() {

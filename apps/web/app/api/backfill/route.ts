@@ -37,6 +37,9 @@ const createBackfillBody = z.object({
   // accept the field for forward-compat (Phase 2 auto-execute) but
   // ignore it here.
   dryRun: z.boolean().optional(),
+  // EL-483 — default false: the worker injects the user's own email
+  // into excludedSenders. Setting this true is an explicit opt-in.
+  includeSelfSent: z.boolean().optional().default(false),
 });
 
 export const GET = withEmailAccount(
@@ -116,9 +119,36 @@ export const POST = withEmailAccount(
         // gate a real auto-execute toggle behind a "I trust this"
         // consent prompt.
         dryRun: true,
+        // EL-483 — persist the user's choice. Default false (= safe).
+        includeSelfSent: parsed.data.includeSelfSent,
         status: "pending",
       },
     });
+
+    // EL-483 — if the user explicitly opted in to include self-sent AND
+    // the sender filter targets their own address, log a warning. We do
+    // NOT block the request: it's an opt-in by definition. The worker
+    // also logs this at evaluate time — having it on the API too means
+    // the audit trail starts the moment the run is created, not when
+    // the worker happens to pick it up.
+    if (parsed.data.includeSelfSent && parsed.data.senderScope) {
+      const ownEmail = await prisma.emailAccount
+        .findUnique({
+          where: { id: emailAccountId },
+          select: { email: true },
+        })
+        .then((a) => a?.email?.trim().toLowerCase() ?? null);
+      if (
+        ownEmail &&
+        parsed.data.senderScope.trim().toLowerCase() === ownEmail
+      ) {
+        logger.warn("backfill.create.includeSelfSent.targetingOwnAddress", {
+          emailAccountId,
+          runId: run.id,
+          senderScope: parsed.data.senderScope,
+        });
+      }
+    }
 
     // Fire-and-forget. Worker is idempotent so a process death just
     // means a future POST to /api/backfill/{runId}/execute or a
