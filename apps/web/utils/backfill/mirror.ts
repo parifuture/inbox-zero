@@ -75,6 +75,14 @@ export interface ListSendersOptions {
   dateCeil?: Date;
   /** Only include emails on or after this date. */
   dateFloor?: Date;
+  /**
+   * EL-483 — senders to drop from the shortlist (case-insensitive,
+   * canonicalized to lower-case before the SQL comparison). The
+   * worker uses this to inject the EmailAccount's own email by
+   * default so a backfill run can never target the user's own
+   * outbox unless they explicitly opted in.
+   */
+  excludeSenders?: string[];
   /** Hard cap on returned senders — defaults to no cap. */
   limit?: number;
   /**
@@ -174,6 +182,19 @@ export class MirrorReader {
     if (opts.senderScope) {
       conditions.push("LOWER(from_address) = ?");
       params.push(opts.senderScope.toLowerCase());
+    }
+
+    // EL-483 — honor `excludeSenders`. Done as a `NOT IN (...)` clause
+    // with a parameter per address so we don't fight SQLite's bind-list
+    // limits (we only ever expect a handful of entries: self-sent,
+    // possibly VIPs in a future ticket).
+    const excludeList = (opts.excludeSenders ?? [])
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0);
+    if (excludeList.length > 0) {
+      const placeholders = excludeList.map(() => "?").join(", ");
+      conditions.push(`LOWER(from_address) NOT IN (${placeholders})`);
+      for (const e of excludeList) params.push(e);
     }
 
     const limitClause =

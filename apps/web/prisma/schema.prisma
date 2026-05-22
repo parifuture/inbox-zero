@@ -1858,6 +1858,16 @@ model BackfillRun {
   senderScope       String? // optional single-sender filter (lowercased email)
   modelId           String // e.g. us.anthropic.claude-sonnet-4-7 — pinned per run for audit
   dryRun            Boolean      @default(true)
+  // EL-483: when false (default), the worker injects the EmailAccount's
+  // own email into excludedSenders so a backfill run can never act on the
+  // user's own outbox. Setting this true is an explicit opt-in (the UI
+  // surfaces a warning when this is checked AND senderScope targets the
+  // user's own address — see route.ts / BackfillRunConfig.tsx).
+  includeSelfSent   Boolean      @default(false)
+  // EL-483: forensic record of what the worker filtered out at evaluate
+  // time. Always set by the worker (not the client) so we have a server-
+  // authoritative audit trail of what was kept-out of any given run.
+  excludedSenders   String[]     @default([])
   totalSenders      Int          @default(0)
   processedSenders  Int          @default(0)
   totalDecisions    Int          @default(0)

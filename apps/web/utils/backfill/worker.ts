@@ -118,9 +118,41 @@ export async function evaluateRun(
 
   const reader = new MirrorReader(mirrorPath);
   try {
+    // EL-483 — by default, exclude the user's own email from the sender
+    // shortlist. Without this, a rule like "trash newsletters from this
+    // sender" applied to the user's own outbox would silently delete
+    // years of sent history (Chotu's #1 sender by volume in his mirror
+    // is himself with 5,792 messages).
+    //
+    // The user can override by setting `includeSelfSent: true` on the
+    // run — but if they do AND `senderScope` targets their own address,
+    // we log a warning so the action shows up in our structured logs.
+    // We don't BLOCK the action: this is opt-in by definition, and
+    // there are legit reasons to scope to one's own outbox (e.g. a
+    // "label everything I sent to my landlord" rule).
+    const ownEmail = (emailAccount.email ?? "").trim().toLowerCase();
+    const excludeSenders =
+      run.includeSelfSent || ownEmail.length === 0 ? [] : [ownEmail];
+    if (
+      run.includeSelfSent &&
+      ownEmail.length > 0 &&
+      run.senderScope &&
+      run.senderScope.trim().toLowerCase() === ownEmail
+    ) {
+      logger.warn(
+        "evaluateRun: includeSelfSent=true with senderScope targeting own address",
+        {
+          runId,
+          emailAccountId: run.emailAccountId,
+          senderScope: run.senderScope,
+        },
+      );
+    }
+
     const senders = reader.listSenders({
       dateFloor: run.dateFloor ?? undefined,
       senderScope: run.senderScope ?? undefined,
+      excludeSenders,
     });
 
     await prisma.backfillRun.update({
@@ -129,6 +161,9 @@ export async function evaluateRun(
         status: "evaluating",
         totalSenders: senders.length,
         startedAt: run.startedAt ?? new Date(),
+        // EL-483 — forensic record of what was filtered out at evaluate
+        // time. Server-authoritative; persisted even on resumes.
+        excludedSenders: excludeSenders,
       },
     });
 

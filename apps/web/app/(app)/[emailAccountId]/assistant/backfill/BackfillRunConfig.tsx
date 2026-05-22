@@ -20,6 +20,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LoadingContent } from "@/components/LoadingContent";
 import { toastError } from "@/components/Toast";
 import type { RulesResponse } from "@/app/api/user/rules/route";
+import type { EmailAccountFullResponse } from "@/app/api/user/email-account/route";
 
 export function BackfillRunConfig({
   onStart,
@@ -27,9 +28,17 @@ export function BackfillRunConfig({
   onStart: (newRunId: string) => void;
 }) {
   const { data: rules, isLoading } = useSWR<RulesResponse>("/api/user/rules");
+  // Fetch the current account's email so we can warn the user when they
+  // type their OWN address into the sender-scope filter (EL-483).
+  const { data: emailAccount } = useSWR<EmailAccountFullResponse>(
+    "/api/user/email-account",
+  );
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [dateFloor, setDateFloor] = useState<string>(""); // yyyy-mm-dd
   const [senderScope, setSenderScope] = useState<string>("");
+  // EL-483 — default OFF: we exclude the user's own email by default.
+  // Toggling this on opts the user in to including their own outbox.
+  const [includeSelfSent, setIncludeSelfSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const enabledRules = rules?.filter((r) => r.enabled) ?? [];
@@ -56,6 +65,7 @@ export function BackfillRunConfig({
             ? new Date(`${dateFloor}T00:00:00`).toISOString()
             : null,
           senderScope: senderScope || null,
+          includeSelfSent,
         }),
       });
       if (!res.ok) {
@@ -180,8 +190,34 @@ export function BackfillRunConfig({
               value={senderScope}
               onChange={(e) => setSenderScope(e.target.value)}
             />
+            {/* EL-483 — inline, non-blocking warning if the user types
+                their own address into the sender-scope filter. */}
+            {emailAccount?.email &&
+              senderScope.trim().toLowerCase() ===
+                emailAccount.email.trim().toLowerCase() && (
+                <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  This includes your sent mail. Are you sure?
+                </div>
+              )}
           </div>
         </div>
+
+        {/* EL-483 — self-sent guardrail. Default off (= exclude self). */}
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: label wraps Checkbox + content */}
+        <label className="flex items-start gap-3 text-sm cursor-pointer">
+          <Checkbox
+            checked={includeSelfSent}
+            onCheckedChange={(v) => setIncludeSelfSent(!!v)}
+          />
+          <div className="flex-1">
+            <div className="font-medium">Include self-sent mail</div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {includeSelfSent
+                ? "Including your own outbox — rules will be evaluated against mail you sent."
+                : "Excluding your own outbox — rules won't touch mail you sent."}
+            </div>
+          </div>
+        </label>
 
         <div className="flex justify-end">
           <Button onClick={submit} disabled={!canSubmit}>

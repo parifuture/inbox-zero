@@ -221,6 +221,58 @@ describe("MirrorReader.listSenders", () => {
       r.close();
     }
   });
+
+  // EL-483 — the worker passes `excludeSenders: [<emailAccount.email>]`
+  // by default so a backfill run can never act on the user's own outbox.
+  it("excludes addresses listed in excludeSenders (case-insensitive)", () => {
+    const r = new MirrorReader(FIXTURE_DB);
+    try {
+      // Drop the newsletter sender via excludeSenders — mimics what the
+      // worker does when the user's own email is the #1 sender by
+      // volume but `includeSelfSent=false`.
+      const senders = r.listSenders({
+        excludeSenders: [NEWSLETTER_SENDER.toUpperCase()],
+      });
+      expect(senders.map((s) => s.fromAddress)).toEqual([
+        RECEIPTS_SENDER,
+        PERSONAL_SENDER,
+      ]);
+      // And the empty-array case still returns everything (= no filter).
+      const all = r.listSenders({ excludeSenders: [] });
+      expect(all.map((s) => s.fromAddress)).toEqual([
+        NEWSLETTER_SENDER,
+        RECEIPTS_SENDER,
+        PERSONAL_SENDER,
+      ]);
+    } finally {
+      r.close();
+    }
+  });
+
+  // EL-483 — explicit-include path: when the user opts in to
+  // includeSelfSent the worker passes `excludeSenders: []` and the
+  // shortlist is identical to the un-filtered baseline.
+  it(
+    "includeSelfSent=true equivalent (no excludeSenders) returns the" +
+      " full shortlist including the would-be-excluded sender",
+    () => {
+      const r = new MirrorReader(FIXTURE_DB);
+      try {
+        // Baseline
+        const baseline = r.listSenders();
+        // Worker behavior when includeSelfSent=true: pass NO excludeSenders.
+        const optedIn = r.listSenders({ excludeSenders: [] });
+        expect(optedIn.map((s) => s.fromAddress)).toEqual(
+          baseline.map((s) => s.fromAddress),
+        );
+        // Sanity: NEWSLETTER_SENDER is in there — it would be the
+        // "self" sender if we WERE excluding by default.
+        expect(optedIn.map((s) => s.fromAddress)).toContain(NEWSLETTER_SENDER);
+      } finally {
+        r.close();
+      }
+    },
+  );
 });
 
 describe("MirrorReader.loadSenderHistory", () => {
