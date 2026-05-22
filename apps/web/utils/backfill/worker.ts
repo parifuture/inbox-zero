@@ -24,6 +24,7 @@
 import prisma from "@/utils/prisma";
 import { createScopedLogger } from "@/utils/logger";
 import { createEmailProvider } from "@/utils/email/provider";
+import { isAutonomousPaused } from "@/utils/kill-switch";
 import {
   MirrorReader,
   defaultMirrorPath,
@@ -49,6 +50,12 @@ const TRUNCATE_REASON_AT = 500;
 export interface WorkerDeps {
   buildProvider?: typeof createEmailProvider;
   evaluate?: typeof evaluateSenderChunk;
+  /**
+   * EL-482 — override the kill-switch check. Defaults to the live
+   * isAutonomousPaused(emailAccountId) reader. Test-only injection so
+   * tests can simulate the kill-switch flipping mid-run.
+   */
+  isAutonomousPaused?: (emailAccountId: string) => Promise<boolean>;
   loadEmailAccount?: typeof getEmailAccountWithAi;
   mirrorPath?: string;
 }
@@ -64,6 +71,7 @@ export async function evaluateRun(
   const evaluate = deps.evaluate ?? evaluateSenderChunk;
   const loadEmailAccount = deps.loadEmailAccount ?? getEmailAccountWithAi;
   const mirrorPath = deps.mirrorPath ?? defaultMirrorPath();
+  const checkPaused = deps.isAutonomousPaused ?? isAutonomousPaused;
 
   const run = await prisma.backfillRun.findUniqueOrThrow({
     where: { id: runId },
@@ -72,6 +80,18 @@ export async function evaluateRun(
     logger.warn("evaluateRun: run is not in an evaluable state", {
       runId,
       status: run.status,
+    });
+    return;
+  }
+
+  // EL-482 — kill-switch gate (defense-in-depth; the route already
+  // gates create-run, but the worker is also reachable from internal
+  // resume flows). If paused at start, refuse to begin the
+  // evaluation phase. Run stays in 'pending' so it can be resumed.
+  if (await checkPaused(run.emailAccountId)) {
+    logger.warn("backfill.evaluate.paused_at_start", {
+      runId,
+      emailAccountId: run.emailAccountId,
     });
     return;
   }
@@ -272,6 +292,7 @@ export async function executeRun(
   deps: WorkerDeps = {},
 ): Promise<void> {
   const buildProvider = deps.buildProvider ?? createEmailProvider;
+  const checkPaused = deps.isAutonomousPaused ?? isAutonomousPaused;
 
   const run = await prisma.backfillRun.findUniqueOrThrow({
     where: { id: runId },
@@ -280,6 +301,19 @@ export async function executeRun(
     logger.warn("executeRun: run is not in an executable state", {
       runId,
       status: run.status,
+    });
+    return;
+  }
+
+  // EL-482 — kill-switch gate (defense-in-depth; the route already
+  // gates the kick-off, but executeRun is also reachable from
+  // internal resume flows). If paused at start, do NOT transition
+  // into 'executing' — the run stays in 'awaiting_execution' so the
+  // user can retry after unpausing without losing dry-run state.
+  if (await checkPaused(run.emailAccountId)) {
+    logger.warn("backfill.execute.paused_at_start", {
+      runId,
+      emailAccountId: run.emailAccountId,
     });
     return;
   }
@@ -313,6 +347,25 @@ export async function executeRun(
     });
     if (fresh?.status === "stopped") {
       logger.info("executeRun: stopped by user", { runId });
+      return;
+    }
+
+    // EL-482 — defense-in-depth: re-check kill-switch before each
+    // Gmail mutation batch. If it gets engaged mid-run, cooperatively
+    // transition the run to 'stopped' (re-using the existing
+    // cooperative-stop mechanism). Pending decisions stay 'pending'
+    // (executedAt=null, executionError=null) so the run can be
+    // resumed after the kill-switch is released.
+    if (await checkPaused(run.emailAccountId)) {
+      logger.warn("backfill.execute.paused_mid_run", {
+        runId,
+        emailAccountId: run.emailAccountId,
+        processed,
+      });
+      await prisma.backfillRun.update({
+        where: { id: runId },
+        data: { status: "stopped" },
+      });
       return;
     }
 

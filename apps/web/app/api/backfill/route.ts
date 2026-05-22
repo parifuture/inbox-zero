@@ -13,6 +13,7 @@ import { z } from "zod";
 import { withEmailAccount } from "@/utils/middleware";
 import prisma from "@/utils/prisma";
 import { evaluateRun } from "@/utils/backfill/worker";
+import { getKillSwitchStatus } from "@/utils/kill-switch";
 import { createScopedLogger } from "@/utils/logger";
 
 const logger = createScopedLogger("api/backfill");
@@ -62,6 +63,31 @@ export const POST = withEmailAccount(
     }
 
     const emailAccountId = request.auth.emailAccountId;
+
+    // EL-482 — kill-switch gate. Backfill is the most-leveraged Gmail
+    // mutation surface in the app. If autonomous actions are paused,
+    // refuse to even create a run — humans usually pause because
+    // something is going wrong, and silently filling up
+    // BackfillDecision is misleading UX. Mirrors the EL-455 pattern
+    // used in /historical-senders/{archive,delete}.
+    const killSwitch = await getKillSwitchStatus(emailAccountId).catch(() => ({
+      paused: false,
+      pauseReason: null,
+    }));
+    if (killSwitch.paused) {
+      logger.warn("backfill.create.paused", {
+        emailAccountId,
+        pauseReason: killSwitch.pauseReason ?? null,
+      });
+      return NextResponse.json(
+        {
+          error: "Autonomous actions are paused.",
+          killSwitchPaused: true,
+          pauseReason: killSwitch.pauseReason ?? null,
+        },
+        { status: 423 },
+      );
+    }
 
     // Sanity: every ruleId actually belongs to this email account so
     // a malicious client can't reference another user's rule.

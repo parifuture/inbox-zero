@@ -319,6 +319,7 @@ vi.mock("@/utils/prisma", () => {
         findMany: vi.fn(async () => []),
       },
       emailAccount: {
+        findUnique: vi.fn(async () => null),
         findUniqueOrThrow: vi.fn(async () => ({
           id: "acct",
           email: "test@example.com",
@@ -846,5 +847,190 @@ describe("executeRun", () => {
     expect(provider.archiveThread).not.toHaveBeenCalled();
     expect(provider.trashThread).not.toHaveBeenCalled();
     expect(store.runs.get(run.id)?.status).toBe("done");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────
+// EL-482 — kill-switch gate on backfill worker
+// ────────────────────────────────────────────────────────────────────
+
+describe("EL-482 kill-switch gate", () => {
+  it("evaluateRun is blocked when kill-switch is engaged at start — no decisions written, status stays pending", async () => {
+    const run = await createRunInStore({ ruleIds: ["rule-1"] });
+    (
+      prisma.rule.findMany as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue([fakeRule]);
+
+    const evaluate = vi.fn(
+      async (args: {
+        emails: { id: string }[];
+      }): Promise<EvaluatorDecision[]> =>
+        args.emails.map((e) => ({
+          messageId: e.id,
+          action: "ARCHIVE" as const,
+          ruleId: "rule-1",
+          reason: "newsletter",
+          confidence: "high" as const,
+        })),
+    );
+
+    const isPaused = vi.fn(async () => true);
+
+    await evaluateRun(run.id, {
+      mirrorPath: FIXTURE_DB,
+      evaluate: evaluate as unknown as NonNullable<
+        Parameters<typeof evaluateRun>[1]
+      >["evaluate"],
+      loadEmailAccount: async () => fakeEmailAccount,
+      isAutonomousPaused: isPaused,
+    });
+
+    // Evaluator was never called.
+    expect(evaluate).not.toHaveBeenCalled();
+    // No decisions persisted.
+    const decisions = [...store.decisions.values()].filter(
+      (d) => d.runId === run.id,
+    );
+    expect(decisions).toHaveLength(0);
+    // Run stays in 'pending' so it can be resumed once unpaused.
+    expect(store.runs.get(run.id)?.status).toBe("pending");
+    expect(isPaused).toHaveBeenCalledWith("acct");
+  });
+
+  it("executeRun is blocked when kill-switch is engaged at start — no Gmail mutations, run stays awaiting_execution", async () => {
+    const run = await createRunInStore({
+      dryRun: true,
+      status: "awaiting_execution",
+    });
+    await prisma.backfillDecision.createMany({
+      data: [
+        {
+          runId: run.id,
+          messageId: "m1",
+          threadId: "th1",
+          sender: NEWSLETTER,
+          action: "ARCHIVE",
+          ruleId: "rule-1",
+          reason: "newsletter",
+        },
+        {
+          runId: run.id,
+          messageId: "m2",
+          threadId: "th2",
+          sender: NEWSLETTER,
+          action: "ARCHIVE",
+          ruleId: "rule-1",
+          reason: "newsletter",
+        },
+      ] as never,
+    });
+
+    const provider = fakeProvider();
+    const isPaused = vi.fn(async () => true);
+
+    await executeRun(
+      run.id,
+      {},
+      {
+        buildProvider: vi.fn(
+          async () => provider,
+        ) as unknown as typeof import("@/utils/email/provider").createEmailProvider,
+        isAutonomousPaused: isPaused,
+      },
+    );
+
+    // No provider calls at all.
+    expect(provider.archiveThread).not.toHaveBeenCalled();
+    expect(provider.trashThread).not.toHaveBeenCalled();
+    expect(provider.markRead).not.toHaveBeenCalled();
+    expect(provider.labelMessage).not.toHaveBeenCalled();
+
+    // Run did NOT transition into 'executing' — stays awaiting_execution
+    // so the user can retry after unpausing without losing dry-run state.
+    const updated = store.runs.get(run.id);
+    expect(updated?.status).toBe("awaiting_execution");
+    expect(updated?.executedDecisions).toBe(0);
+
+    // Decisions are untouched, ready to resume.
+    const decs = [...store.decisions.values()].filter(
+      (d) => d.runId === run.id,
+    );
+    expect(decs.every((d) => d.executedAt === null)).toBe(true);
+    expect(decs.every((d) => d.executionError === null)).toBe(true);
+    expect(isPaused).toHaveBeenCalledWith("acct");
+  });
+
+  it("executeRun cooperatively stops mid-batch when kill-switch engages between batches — pending decisions stay pending", async () => {
+    const run = await createRunInStore({
+      dryRun: true,
+      status: "awaiting_execution",
+    });
+    // 3 decisions; with batch size 50 they're all in one batch, so
+    // we drive the kill-switch flip via the per-decision provider call.
+    // Easier: simulate the flip happening between the first and second
+    // batch loop iterations by toggling the mock after the first call.
+    await prisma.backfillDecision.createMany({
+      data: [
+        {
+          runId: run.id,
+          messageId: "m1",
+          threadId: "th1",
+          sender: NEWSLETTER,
+          action: "ARCHIVE",
+          ruleId: "rule-1",
+          reason: "newsletter",
+        },
+        {
+          runId: run.id,
+          messageId: "m2",
+          threadId: "th2",
+          sender: NEWSLETTER,
+          action: "ARCHIVE",
+          ruleId: "rule-1",
+          reason: "newsletter",
+        },
+      ] as never,
+    });
+
+    const provider = fakeProvider();
+
+    // Two checks need to return false (start-of-function check + iter
+    // 1's start-of-batch check) so that the first batch processes
+    // both decisions. Then iter 2's check flips true, triggering the
+    // cooperative-stop path.
+    let callCount = 0;
+    const isPaused = vi.fn(async () => {
+      callCount += 1;
+      return callCount > 2;
+    });
+
+    await executeRun(
+      run.id,
+      {},
+      {
+        buildProvider: vi.fn(
+          async () => provider,
+        ) as unknown as typeof import("@/utils/email/provider").createEmailProvider,
+        isAutonomousPaused: isPaused,
+      },
+    );
+
+    // First batch (both decisions) was processed before the flip.
+    expect(provider.archiveThread).toHaveBeenCalledTimes(2);
+
+    // Run cooperatively transitioned to 'stopped'.
+    const updated = store.runs.get(run.id);
+    expect(updated?.status).toBe("stopped");
+
+    // The decisions that already executed are marked executedAt;
+    // any remaining ones (none in this case) stay pending. Critically,
+    // none are marked errored.
+    const decs = [...store.decisions.values()].filter(
+      (d) => d.runId === run.id,
+    );
+    expect(decs.every((d) => d.executionError === null)).toBe(true);
+    // Kill-switch was checked at least 3 times: start-of-function,
+    // start-of-iter-1 (passed), start-of-iter-2 (triggered the stop).
+    expect(callCount).toBeGreaterThanOrEqual(3);
   });
 });
