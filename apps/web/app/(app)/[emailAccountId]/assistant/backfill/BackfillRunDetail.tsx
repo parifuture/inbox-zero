@@ -27,6 +27,8 @@ import {
 } from "@/components/ui/table";
 import { LoadingContent } from "@/components/LoadingContent";
 import { toastError, toastSuccess } from "@/components/Toast";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { fetchWithAccount } from "@/utils/fetch";
 import type { BackfillRunDetailResponse } from "@/app/api/backfill/[runId]/route";
 
 const TERMINAL = new Set(["done", "error", "stopped"]);
@@ -62,6 +64,7 @@ export function BackfillRunDetail({
   runId: string;
   onClose: () => void;
 }) {
+  const { emailAccountId } = useAccount();
   const { data, isLoading, mutate } = useSWR<BackfillRunDetailResponse>(
     `/api/backfill/${runId}`,
     {
@@ -81,10 +84,14 @@ export function BackfillRunDetail({
   const callAction = async (kind: "execute" | "stop", successMsg: string) => {
     setActing(kind);
     try {
-      const res = await fetch(
-        `/api/backfill/${runId}/${kind === "execute" ? "execute" : "stop"}`,
-        { method: "POST" },
-      );
+      // EL-507 — use fetchWithAccount so the X-Email-Account-ID header is
+      // sent. The server-side auth middleware returns 403 "Email account ID
+      // is required" without it.
+      const res = await fetchWithAccount({
+        url: `/api/backfill/${runId}/${kind === "execute" ? "execute" : "stop"}`,
+        emailAccountId,
+        init: { method: "POST" },
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
