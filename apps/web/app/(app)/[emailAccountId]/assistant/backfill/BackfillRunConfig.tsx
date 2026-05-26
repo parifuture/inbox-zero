@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LoadingContent } from "@/components/LoadingContent";
 import { toastError } from "@/components/Toast";
+import { useAccount } from "@/providers/EmailAccountProvider";
+import { fetchWithAccount } from "@/utils/fetch";
 import type { RulesResponse } from "@/app/api/user/rules/route";
 import type { EmailAccountFullResponse } from "@/app/api/user/email-account/route";
 
@@ -27,6 +29,7 @@ export function BackfillRunConfig({
 }: {
   onStart: (newRunId: string) => void;
 }) {
+  const { emailAccountId } = useAccount();
   const { data: rules, isLoading } = useSWR<RulesResponse>("/api/user/rules");
   // Fetch the current account's email so we can warn the user when they
   // type their OWN address into the sender-scope filter (EL-483).
@@ -56,17 +59,24 @@ export function BackfillRunConfig({
   const submit = async () => {
     setSubmitting(true);
     try {
-      const res = await fetch("/api/backfill", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          ruleIds: selectedIds,
-          dateFloor: dateFloor
-            ? new Date(`${dateFloor}T00:00:00`).toISOString()
-            : null,
-          senderScope: senderScope || null,
-          includeSelfSent,
-        }),
+      // EL-507 — use fetchWithAccount so the X-Email-Account-ID header is
+      // sent. The server-side auth middleware returns 403 "Email account ID
+      // is required" without it.
+      const res = await fetchWithAccount({
+        url: "/api/backfill",
+        emailAccountId,
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            ruleIds: selectedIds,
+            dateFloor: dateFloor
+              ? new Date(`${dateFloor}T00:00:00`).toISOString()
+              : null,
+            senderScope: senderScope || null,
+            includeSelfSent,
+          }),
+        },
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
