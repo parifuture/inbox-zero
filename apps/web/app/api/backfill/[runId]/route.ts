@@ -54,6 +54,28 @@ async function getRunDetail({
     },
   });
 
+  // EL-506 — resolve rule UUIDs to names for the UI. We look up the
+  // union of (run.ruleIds, decision.ruleIds) so that even rules that
+  // were deleted or removed from the run between creation and now
+  // still surface a name when they appear in the decisions table.
+  // Single findMany — no N+1.
+  const decisionRuleIds = new Set<string>();
+  for (const c of counters) {
+    if (c.ruleId) decisionRuleIds.add(c.ruleId);
+  }
+  for (const d of recentDecisions) {
+    if (d.ruleId) decisionRuleIds.add(d.ruleId);
+  }
+  const ruleIdsToFetch = Array.from(
+    new Set<string>([...run.ruleIds, ...decisionRuleIds]),
+  );
+  const rules = ruleIdsToFetch.length
+    ? await prisma.rule.findMany({
+        where: { id: { in: ruleIdsToFetch }, emailAccountId },
+        select: { id: true, name: true },
+      })
+    : [];
+
   return {
     run,
     counters: counters.map((c) => ({
@@ -62,6 +84,7 @@ async function getRunDetail({
       count: c._count._all,
     })),
     recentDecisions,
+    rules,
   };
 }
 

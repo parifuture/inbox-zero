@@ -81,6 +81,29 @@ export function BackfillRunDetail({
   );
   const [acting, setActing] = useState<"execute" | "stop" | null>(null);
 
+  // EL-506 — map rule UUIDs to human-readable names so the per-rule
+  // activity table and recent decisions don't render bare UUIDs.
+  const ruleNameById = new Map<string, string>(
+    (data?.rules ?? []).map((r) => [r.id, r.name]),
+  );
+  const renderRuleCell = (ruleId: string | null) => {
+    if (!ruleId) {
+      return <em className="text-muted-foreground">(no rule)</em>;
+    }
+    const name = ruleNameById.get(ruleId);
+    if (!name) {
+      return (
+        <em
+          className="text-muted-foreground"
+          title={`Rule ${ruleId} (deleted or unavailable)`}
+        >
+          (deleted rule {ruleId.slice(0, 8)})
+        </em>
+      );
+    }
+    return <span title={ruleId}>{name}</span>;
+  };
+
   const callAction = async (kind: "execute" | "stop", successMsg: string) => {
     setActing(kind);
     try {
@@ -229,8 +252,8 @@ export function BackfillRunDetail({
                         <TableRow
                           key={`${c.ruleId ?? "skip"}-${c.action}-${i}`}
                         >
-                          <TableCell className="font-mono text-xs">
-                            {c.ruleId ?? <em>(no rule)</em>}
+                          <TableCell className="text-xs">
+                            {renderRuleCell(c.ruleId)}
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -274,6 +297,7 @@ export function BackfillRunDetail({
                         <TableHead className="w-32">When</TableHead>
                         <TableHead>Sender</TableHead>
                         <TableHead className="w-20">Action</TableHead>
+                        <TableHead className="w-32">Rule</TableHead>
                         <TableHead>Reason</TableHead>
                         <TableHead className="w-24">Status</TableHead>
                       </TableRow>
@@ -299,6 +323,9 @@ export function BackfillRunDetail({
                             >
                               {d.action}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs truncate max-w-[140px]">
+                            {renderRuleCell(d.ruleId)}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground line-clamp-2 max-w-[320px]">
                             {d.reason}
